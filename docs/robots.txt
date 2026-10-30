@@ -1,0 +1,6 @@
+User-agent: *
+Disallow: /AsiaMotor/cart
+Disallow: /AsiaMotor/checkout
+Disallow: /AsiaMotor/admin/
+
+Sitemap: https://k1s1l.github.io/AsiaMotor/sitemap.xml

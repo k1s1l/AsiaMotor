@@ -22,7 +22,7 @@ export const mat = {
 }
 
 // ---------- textures ----------
-function canvasTex(size: number, draw: (g: CanvasRenderingContext2D, s: number) => void, color = false) {
+export function canvasTex(size: number, draw: (g: CanvasRenderingContext2D, s: number) => void, color = false) {
   const c = document.createElement('canvas')
   c.width = c.height = size
   draw(c.getContext('2d')!, size)
@@ -98,19 +98,19 @@ export function lathe(profile: [number, number][], segments = 96) {
   )
 }
 
-function ring(r: number, segs = 64) {
+export function ring(r: number, segs = 64) {
   const p = new THREE.Path()
   p.absarc(0, 0, r, 0, TAU, true)
   return p
 }
 
-function holeAt(x: number, y: number, r: number) {
+export function holeAt(x: number, y: number, r: number) {
   const p = new THREE.Path()
   p.absarc(x, y, r, 0, TAU, true)
   return p
 }
 
-function extrude(shape: THREE.Shape, depth: number, bevel = 0.02, curveSegments = 48) {
+export function extrude(shape: THREE.Shape, depth: number, bevel = 0.02, curveSegments = 48) {
   const g = new THREE.ExtrudeGeometry(shape, {
     depth,
     bevelEnabled: bevel > 0,
@@ -122,7 +122,7 @@ function extrude(shape: THREE.Shape, depth: number, bevel = 0.02, curveSegments 
   return g
 }
 
-function mesh(g: THREE.BufferGeometry, m: THREE.Material) {
+export function mesh(g: THREE.BufferGeometry, m: THREE.Material) {
   const o = new THREE.Mesh(g, m)
   o.castShadow = true
   o.receiveShadow = true
