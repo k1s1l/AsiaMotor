@@ -251,6 +251,11 @@
   }
 }
 
+/* the header steps aside while the hero car is being assembled */
+html[data-intro='running'] header[data-intro='header'] {
+  transform: translateY(-100%) !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

@@ -10,7 +10,6 @@ import { Brands } from './components/Brands'
 import { Cta } from './components/Cta'
 import { Footer } from './components/Footer'
 import { Overlays } from './components/Overlays'
-import { Intro } from './components/Intro'
 import { ScrollTrigger, startSmoothScroll } from './lib/motion'
 import { useI18n } from './i18n'
 
@@ -34,7 +33,6 @@ export default function App() {
       <a href="#finder" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[200] focus:rounded-full focus:bg-white focus:px-4 focus:py-2 focus:text-ink">
         {t.nav.finder}
       </a>
-      <Intro />
       <Header />
       <main>
         <Hero />
