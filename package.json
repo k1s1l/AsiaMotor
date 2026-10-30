@@ -12,7 +12,9 @@
     "test:pricing": "tsx --test src/pricing/engine.test.ts",
     "build:pages": "BASE_PATH=/AsiaMotor/ npm run build && BASE_PATH=/AsiaMotor/ tsx scripts/prerender.ts",
     "prerender": "tsx scripts/prerender.ts",
-    "deploy:docs": "npm run build:pages && rm -rf docs && cp -r dist docs && touch docs/.nojekyll"
+    "deploy:docs": "npm run build:pages && rm -rf docs && cp -r dist docs && touch docs/.nojekyll",
+    "model:inspect": "tsx scripts/inspect-model.ts",
+    "model:optimize": "bash scripts/optimize-model.sh"
   },
   "dependencies": {
     "@fontsource-variable/manrope": "^5.3.0",

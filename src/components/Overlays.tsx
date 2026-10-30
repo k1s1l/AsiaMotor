@@ -32,7 +32,7 @@ const Backdrop = ({ open, onClick, z = 'z-[60]' }: { open: boolean; onClick: () 
 )
 
 const drawer = (open: boolean, side: 'right' | 'left' = 'right') =>
-  `fixed top-0 ${side}-0 z-[70] flex h-[100dvh] w-full max-w-[460px] flex-col bg-paper text-ink transition-transform duration-600 ease-[var(--ease-out-expo)] ${open ? 'translate-x-0 shadow-2xl' : side === 'right' ? 'translate-x-full' : '-translate-x-full'}`
+  `fixed top-0 ${side === 'right' ? 'right-0' : 'left-0'} z-[70] flex h-[100dvh] w-full max-w-[460px] flex-col bg-paper text-ink transition-transform duration-600 ease-[var(--ease-out-expo)] ${open ? 'translate-x-0 shadow-2xl' : side === 'right' ? 'translate-x-full' : '-translate-x-full'}`
 
 function Head({ title, onClose }: { title: ReactNode; onClose: () => void }) {
   const { t } = useI18n()
