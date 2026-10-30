@@ -6,6 +6,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import * as P from './parts'
+import * as P2 from './parts2'
 
 type Mood = 'dark' | 'light'
 interface Shot {
@@ -299,6 +300,80 @@ const shots: Record<string, Shot> = {
   },
 }
 
+/** Light packshot with automatic framing: the part is scaled to a common size and centred on the floor. */
+function pack(build: () => THREE.Object3D, rot: [number, number, number] = [0, -0.5, 0]): Shot {
+  return {
+    mood: 'light',
+    fov: 26,
+    build: (s) => {
+      const o = build()
+      const holder = new THREE.Group()
+      holder.add(o)
+      o.rotation.x += rot[0]
+      o.rotation.y += rot[1]
+      o.rotation.z += rot[2]
+      holder.updateMatrixWorld(true)
+      let box = new THREE.Box3().setFromObject(holder)
+      const size = box.getSize(new THREE.Vector3())
+      holder.scale.setScalar(3.4 / Math.max(size.x, size.y, size.z))
+      holder.updateMatrixWorld(true)
+      box = new THREE.Box3().setFromObject(holder)
+      const c = box.getCenter(new THREE.Vector3())
+      holder.position.set(-c.x, -box.min.y, -c.z)
+      s.add(holder)
+      holder.updateMatrixWorld(true)
+      const sphere = new THREE.Box3().setFromObject(holder).getBoundingSphere(new THREE.Sphere())
+      const dist = (sphere.radius / Math.sin(THREE.MathUtils.degToRad(13))) * 0.86
+      const dir = new THREE.Vector3(0.28, 0.62, 1).normalize()
+      return (_t, cam) => {
+        cam.position.copy(sphere.center).addScaledVector(dir, dist)
+        cam.lookAt(sphere.center)
+      }
+    },
+  }
+}
+
+const packs: Record<string, Shot> = {
+  'p-fender': pack(P2.fender, [-0.25, -0.6, 0]),
+  'p-bumper': pack(P2.bumper, [-0.2, 0.25, 0]),
+  'p-door': pack(P2.door, [-0.1, -0.45, 0]),
+  'p-grille': pack(P2.grille, [-0.15, -0.35, 0]),
+  'p-mirror': pack(P2.mirror, [0, Math.PI + 0.6, 0]),
+  'p-bracket': pack(P2.bracket, [0, -0.6, 0]),
+  'p-piston': pack(P.pistonRod, [0.1, 0.9, 0]),
+  'p-gasket': pack(P2.gasket, [0.5, -0.3, 0]),
+  'p-pump': pack(P2.pump, [0, -0.4, 0]),
+  'p-mount': pack(P2.mount, [0, -0.5, 0]),
+  'p-turbo': pack(P2.turbo, [0, 0, 0]),
+  'p-strut': pack(P2.strut, [0, 0.6, 0.15]),
+  'p-arm': pack(P2.controlArm, [0, -0.4, 0]),
+  'p-balljoint': pack(P2.ballJoint, [0.2, 0, 0]),
+  'p-bushing': pack(P2.bushing, [0, 0, 0.5]),
+  'p-link': pack(P2.stabLink, [0, -0.4, 0]),
+  'p-hub': pack(P2.hub, [0.4, 0, 0]),
+  'p-tierod': pack(P2.tieRod, [0, -0.45, 0]),
+  'p-rack': pack(P2.rack, [0, -0.35, 0]),
+  'p-disc': pack(P2.disc, [0, -0.6, 0]),
+  'p-caliper': pack(P2.caliper, [0, -0.6, 0]),
+  'p-pads': pack(P2.pads, [0, -0.3, 0]),
+  'p-ecu': pack(P2.ecu, [0.25, -0.5, 0]),
+  'p-coil': pack(P2.coil, [0, -0.4, 0]),
+  'p-taillight': pack(P2.taillight, [-0.2, 0.45, 0]),
+  'p-foglight': pack(P2.foglight, [0, -0.5, 0]),
+  'p-gears': pack(() => P.gearSet().group, [-0.3, 0.4, 0]),
+  'p-clutch': pack(P2.clutch, [0.5, 0, 0]),
+  'p-cv': pack(P2.cvAxle, [0, -0.35, 0]),
+  'p-radiator': pack(P2.radiator, [-0.1, -0.5, 0]),
+  'p-fan': pack(() => P.coolingFan().group, [0, -0.6, 0]),
+  'p-thermostat': pack(P2.thermostat, [0, 0, 0]),
+  'p-compressor': pack(P2.compressor, [0, -0.5, 0]),
+  'p-oilfilter': pack(P.oilFilter, [0, -0.4, 0]),
+  'p-airfilter': pack(P2.airFilter, [0.35, -0.5, 0]),
+  'p-sparkplug': pack(P.sparkPlug, [0, 0, Math.PI / 2 - 0.1]),
+  'p-belt': pack(P2.belt, [0, -0.3, 0]),
+  'p-muffler': pack(P2.muffler, [0, -0.45, 0]),
+}
+
 // ------------------------------------------------------------ runtime
 let renderer: THREE.WebGLRenderer
 let composer: EffectComposer
@@ -314,7 +389,7 @@ declare global {
 }
 
 window.__init = (name, w, h) => {
-  const shot = shots[name]
+  const shot = shots[name] ?? packs[name]
   if (!shot) throw new Error('unknown shot ' + name)
   renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true })
   renderer.setPixelRatio(1)

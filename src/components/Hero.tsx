@@ -1,8 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ArrowDownRight, ArrowUpRight, RotateCcw, SkipForward } from 'lucide-react'
+import { Link, useNavigate } from 'react-router'
+import { ArrowDownRight, ArrowRight, ArrowUpRight, RotateCcw, Search, SkipForward } from 'lucide-react'
 import { useI18n } from '../i18n'
 import { gsap, reducedMotion, scrollToTarget } from '../lib/motion'
 import { Split } from './Split'
+import { asset } from '../lib/asset'
 import { Logo } from './Logo'
 import { company } from '../data/company'
 import type { AssemblyScene } from '../three/assembly'
@@ -19,7 +21,7 @@ type Phase = 'loading' | 'assembling' | 'done' | 'static'
 type Tier = 'high' | 'low' | 'static'
 
 const SEEN_KEY = 'am-assembled'
-const MODEL_URL = 'models/car.glb'
+const MODEL_URL = asset('models/car.glb')
 
 function detectTier(): Tier {
   const q = new URLSearchParams(location.search).get('3d')
@@ -67,6 +69,8 @@ export function Hero() {
   const [progress, setProgress] = useState(0)
   const [stage, setStage] = useState(-1)
   const tierRef = useRef<Tier>('high')
+  const [q, setQ] = useState('')
+  const nav = useNavigate()
 
   // boot the 3D scene (own chunk, so the rest of the page is not blocked by three.js)
   useEffect(() => {
@@ -116,16 +120,6 @@ export function Hero() {
     }
   }, [])
 
-  // keep the header out of the way while the car is being assembled
-  useEffect(() => {
-    const busy = phase === 'loading' || phase === 'assembling'
-    if (busy) document.documentElement.dataset.intro = 'running'
-    else delete document.documentElement.dataset.intro
-    return () => {
-      delete document.documentElement.dataset.intro
-    }
-  }, [phase])
-
   // size, visibility and pointer parallax
   useEffect(() => {
     const el = root.current
@@ -155,7 +149,6 @@ export function Hero() {
       gsap
         .timeline({ defaults: { ease: 'expo.out' } })
         .from('[data-hero-shade]', { autoAlpha: 0, duration: 1.6 }, 0)
-        .from('[data-hero-logo]', { y: 24, autoAlpha: 0, duration: 1 }, 0.05)
         .from('[data-hero-eyebrow]', { y: 20, autoAlpha: 0, duration: 1 }, 0.2)
         .from('.hero-title .sw > span', { yPercent: 115, duration: 1.4, stagger: 0.08 }, 0.25)
         .from('[data-hero-fade]', { y: 30, autoAlpha: 0, duration: 1.2, stagger: 0.1 }, 0.7)
@@ -183,8 +176,8 @@ export function Hero() {
       <div data-hero-frame className="absolute inset-0 overflow-hidden [clip-path:inset(0%_0%_0%_0%_round_0px)]">
         {phase === 'static' ? (
           <picture>
-            <source media="(max-width: 767px)" srcSet="media/car-hero-mobile.webp" />
-            <img src="media/car-hero.webp" alt="" className="absolute inset-0 h-full w-full object-cover" fetchPriority="high" />
+            <source media="(max-width: 767px)" srcSet={asset('media/car-hero-mobile.webp')} />
+            <img src={asset('media/car-hero.webp')} alt="" className="absolute inset-0 h-full w-full object-cover" fetchPriority="high" />
           </picture>
         ) : (
           <canvas ref={canvas} className="absolute inset-0 block h-full w-full touch-pan-y" aria-hidden="true" />
@@ -219,21 +212,25 @@ export function Hero() {
       {/* assembly HUD */}
       {phase === 'assembling' && (
         <>
-          <div className="container-x absolute inset-x-0 top-0 z-10 flex items-center justify-between pt-6 text-white">
-            <Logo />
-            <button onClick={skip} className="btn btn-ghost min-h-[44px] px-5 text-[14px]">
-              {t.hero.skip} <SkipForward size={15} />
-            </button>
-          </div>
           <div className="container-x absolute inset-x-0 bottom-0 z-10 pb-7 text-white">
-            <p className="eyebrow mb-4 flex items-center gap-3 text-white/55">
-              <span className="relative flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-60" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-accent" />
-              </span>
-              {t.hero.assembling}
-              <span className="text-white md:hidden">· {stages[Math.max(0, Math.min(stage, stages.length - 1))]}</span>
-            </p>
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+              <p className="flex items-center gap-3 text-[14px] text-white/70">
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-60" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-accent" />
+                </span>
+                {t.hero.assembling}
+                <span className="text-white md:hidden">· {stages[Math.max(0, Math.min(stage, stages.length - 1))]}</span>
+              </p>
+              <div className="flex gap-2">
+                <Link to="/catalog" className="btn btn-accent min-h-[44px] px-5 text-[14px]">
+                  {t.hero.toCatalog} <ArrowRight size={15} />
+                </Link>
+                <button onClick={skip} className="btn btn-ghost min-h-[44px] px-5 text-[14px]">
+                  {t.hero.skip} <SkipForward size={15} />
+                </button>
+              </div>
+            </div>
             <ol className="grid grid-cols-7 gap-1.5 sm:gap-3">
               {stages.map((s, i) => (
                 <li key={s} className="min-w-0">
@@ -253,16 +250,13 @@ export function Hero() {
       {/* headline */}
       <div
         data-hero-copy
-        className={`container-x relative z-10 flex h-full flex-col justify-end pb-28 pt-28 sm:pb-32 lg:justify-center lg:pb-16 ${showCopy ? '' : 'pointer-events-none invisible'}`}
+        className={`container-x relative z-10 flex h-full flex-col justify-end pb-24 pt-28 sm:pb-28 lg:justify-center lg:pb-16 lg:pt-24 ${showCopy ? '' : 'pointer-events-none invisible'}`}
       >
-        <div data-hero-logo className="mb-7 hidden text-white md:block">
-          <Logo />
-        </div>
         <p data-hero-eyebrow className="eyebrow flex items-center gap-3 text-white/70">
           <span className="h-px w-10 bg-accent" />
           {t.hero.eyebrow}
         </p>
-        <h1 className="hero-title display mt-6 text-[8.8vw] text-white sm:text-[clamp(40px,7vw,96px)] lg:text-[clamp(44px,4.6vw,104px)]">
+        <h1 className="hero-title display mt-6 text-[8.8vw] text-white sm:text-[clamp(40px,7vw,96px)] lg:text-[clamp(44px,4.4vw,96px)]">
           {t.hero.title.map((line, i) => (
             <Split key={line + i} text={line} className={`block ${i === 2 ? 'text-white/45' : ''}`} />
           ))}
@@ -270,11 +264,26 @@ export function Hero() {
         <p data-hero-fade className="mt-7 max-w-[30rem] text-[16px] leading-relaxed text-white/70 sm:text-[17px]">
           {t.hero.lead}
         </p>
-        <div data-hero-fade className="mt-9 flex flex-col gap-3 sm:flex-row">
-          <button className="btn btn-accent" onClick={() => scrollToTarget('categories')}>
-            {t.hero.ctaCatalog} <ArrowUpRight size={18} className="btn-ico" />
+        <form
+          data-hero-fade
+          role="search"
+          className="mt-8 flex max-w-[34rem] items-center gap-2 rounded-full border border-white/20 bg-white/8 p-1.5 pl-5 backdrop-blur-md focus-within:border-white/60"
+          onSubmit={(e) => {
+            e.preventDefault()
+            nav(q.trim() ? `/catalog?q=${encodeURIComponent(q.trim())}` : '/catalog')
+          }}
+        >
+          <Search size={18} className="shrink-0 text-white/60" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t.nav.searchPh} aria-label={t.nav.search} className="field min-w-0 py-2 text-[15px] text-white placeholder:text-white/45" />
+          <button type="submit" className="btn btn-accent min-h-[44px] shrink-0 px-5 text-[14px]">
+            {t.nav.search}
           </button>
-          <button className="btn btn-ghost" onClick={() => scrollToTarget('finder')}>
+        </form>
+        <div data-hero-fade className="mt-4 flex flex-col gap-3 sm:flex-row">
+          <Link to="/catalog" className="btn btn-ghost">
+            {t.hero.ctaCatalog} <ArrowUpRight size={18} className="btn-ico" />
+          </Link>
+          <button className="btn btn-ghost" onClick={() => scrollToTarget('pick')}>
             {t.hero.ctaFind}
           </button>
         </div>
@@ -282,7 +291,7 @@ export function Hero() {
 
       {showCopy && (
         <div data-hero-bar className="container-x absolute inset-x-0 bottom-0 z-10 grid grid-cols-[auto_1fr_auto] items-center gap-8 pb-6 text-white/60">
-          <button onClick={() => scrollToTarget('finder')} className="group eyebrow flex items-center gap-3" aria-label={t.hero.scroll}>
+          <button onClick={() => scrollToTarget('pick')} className="group eyebrow flex items-center gap-3" aria-label={t.hero.scroll}>
             <span className="relative block h-10 w-px overflow-hidden bg-white/20">
               <span className="absolute inset-x-0 top-0 h-1/2 animate-[scrollcue_2.2s_cubic-bezier(.76,0,.24,1)_infinite] bg-accent" />
             </span>

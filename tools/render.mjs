@@ -15,6 +15,8 @@ const preview = process.argv.includes('--preview')
 const FPS = 30
 const CATS = ['cat-engine', 'cat-transmission', 'cat-brakes', 'cat-suspension', 'cat-electrics', 'cat-body', 'cat-optics', 'cat-cooling', 'cat-maintenance', 'cat-steering']
 const PRODUCTS = ['p-hood', 'p-alternator', 'p-sensor', 'p-starter', 'p-tensioner', 'p-sprocket', 'p-headlight']
+// auto-framed packshots, one per catalogue subcategory (see packs in tools/studio/studio.ts)
+const PACKS = ['p-fender', 'p-bumper', 'p-door', 'p-grille', 'p-mirror', 'p-bracket', 'p-piston', 'p-gasket', 'p-pump', 'p-mount', 'p-turbo', 'p-strut', 'p-arm', 'p-balljoint', 'p-bushing', 'p-link', 'p-hub', 'p-tierod', 'p-rack', 'p-disc', 'p-caliper', 'p-pads', 'p-ecu', 'p-coil', 'p-taillight', 'p-foglight', 'p-gears', 'p-clutch', 'p-cv', 'p-radiator', 'p-fan', 'p-thermostat', 'p-compressor', 'p-oilfilter', 'p-airfilter', 'p-sparkplug', 'p-belt', 'p-muffler']
 
 const sizes = (name) =>
   name === 'story-macro' ? [2400, 1200] : name.startsWith('cat') ? [1600, 1200] : [1200, 1200]
@@ -56,10 +58,11 @@ async function still(name, outName, q = 82) {
 }
 
 try {
-  if (arg === 'stills' || arg === 'all') {
+  if (arg === 'packs') for (const p of PACKS) await still(p, p, 84)
+  else if (arg === 'stills' || arg === 'all') {
     for (const c of CATS) await still(c, c)
     await still('story-macro', 'story-macro', 80)
-    for (const p of PRODUCTS) await still(p, p, 84)
+    for (const p of [...PRODUCTS, ...PACKS]) await still(p, p, 84)
   } else for (const n of arg.split(',')) await still(n, n)
 } finally {
   await browser.close()

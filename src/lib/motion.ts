@@ -30,6 +30,12 @@ export function scrollToTarget(target: string | HTMLElement, offset = -72) {
   else window.scrollTo({ top, behavior: reducedMotion() ? 'auto' : 'smooth' })
 }
 
+/** Jump to the top on page change (no smooth scroll: a new page should simply start at the top). */
+export function scrollToTop() {
+  if (lenis) lenis.scrollTo(0, { immediate: true, force: true })
+  else window.scrollTo(0, 0)
+}
+
 export function lockScroll(locked: boolean) {
   if (lenis) (locked ? lenis.stop() : lenis.start())
   document.documentElement.style.overflow = locked ? 'hidden' : ''
