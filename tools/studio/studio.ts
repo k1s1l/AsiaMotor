@@ -19,15 +19,6 @@ interface Shot {
   shift?: number
 }
 
-const ease = (x: number) => x * x * (3 - 2 * x)
-const v3 = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z)
-
-function dolly(cam: THREE.PerspectiveCamera, t: number, dur: number, from: THREE.Vector3, to: THREE.Vector3, look: THREE.Vector3, lookTo?: THREE.Vector3) {
-  const k = ease(Math.min(1, Math.max(0, t / dur)))
-  cam.position.lerpVectors(from, to, k)
-  cam.lookAt(lookTo ? look.clone().lerp(lookTo, k) : look)
-}
-
 /** Studio "photo lamps" baked into an environment map — gives metal its strip-light reflections. */
 function darkEnvironment(renderer: THREE.WebGLRenderer, warm = 1) {
   const s = new THREE.Scene()
@@ -109,75 +100,6 @@ function stage(scene: THREE.Scene, renderer: THREE.WebGLRenderer, mood: Mood, fl
 
 // ------------------------------------------------------------ shots
 const shots: Record<string, Shot> = {
-  // ---- hero film ----
-  'film-disc': {
-    mood: 'dark',
-    shift: 0.2,
-    fov: 30,
-    bloom: 0.55,
-    build: (s) => {
-      const { rotor, caliper, heatMat } = P.brakeDisc({ caliper: true, heat: true })
-      const asm = new THREE.Group()
-      asm.add(rotor, caliper!)
-      asm.position.set(0, 1.72, 0)
-      asm.rotation.y = -0.62
-      s.add(asm)
-      return (t, cam) => {
-        rotor.rotation.z = -t * 1.1
-        heatMat!.emissiveIntensity = 0.08 + ease(Math.min(1, t / 3.4)) * 0.6
-        dolly(cam, t, 3.6, v3(2.2, 1.1, 8.6), v3(0.9, 1.6, 7.4), v3(0, 1.7, 0), v3(0, 1.75, 0))
-      }
-    },
-  },
-  'film-gears': {
-    mood: 'dark',
-    shift: 0.27,
-    fov: 28,
-    bloom: 0.25,
-    build: (s) => {
-      const { group, update } = P.gearSet()
-      group.position.set(-1.0, 1.6, 0)
-      group.rotation.set(-0.35, 0.55, 0)
-      s.add(group)
-      return (t, cam) => {
-        update(t + 2)
-        dolly(cam, t, 3.6, v3(-1.0, 3.6, 12.6), v3(1.4, 3.2, 12.0), v3(0.4, 1.4, 0), v3(0.6, 1.5, 0))
-      }
-    },
-  },
-  'film-spring': {
-    mood: 'dark',
-    shift: 0.2,
-    fov: 30,
-    bloom: 0.25,
-    build: (s) => {
-      const strut = P.springStrut()
-      strut.position.set(0, 2.95, 0)
-      strut.rotation.z = 0.08
-      s.add(strut)
-      return (t, cam) => {
-        strut.rotation.y = t * 0.32
-        dolly(cam, t, 3.6, v3(1.6, 0.9, 9.6), v3(1.0, 2.4, 8.8), v3(0, 2.6, 0), v3(0, 3.0, 0))
-      }
-    },
-  },
-  'film-piston': {
-    mood: 'dark',
-    shift: 0.2,
-    fov: 30,
-    bloom: 0.25,
-    build: (s) => {
-      const p = P.pistonRod()
-      p.position.set(0, 3.4, 0)
-      p.rotation.set(0.12, 0, -0.1)
-      s.add(p)
-      return (t, cam) => {
-        p.rotation.y = 0.4 + t * 0.28
-        dolly(cam, t, 3.6, v3(0.8, 3.4, 10.4), v3(0.2, 3.0, 9.0), v3(0, 2.3, 0), v3(0, 2.4, 0))
-      }
-    },
-  },
-
   // ---- dark category stills ----
   'cat-engine': {
     mood: 'dark', fov: 30,

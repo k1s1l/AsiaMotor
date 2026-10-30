@@ -16,7 +16,8 @@ export function startSmoothScroll() {
   lenis = new Lenis({ duration: 1.15, easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)), smoothWheel: true })
   lenis.on('scroll', ScrollTrigger.update)
   gsap.ticker.add((time) => lenis?.raf(time * 1000))
-  gsap.ticker.lagSmoothing(0)
+  // keep lag smoothing on: a slow frame (shader compile, big decode) must not make timelines jump ahead
+  gsap.ticker.lagSmoothing(500, 33)
 }
 
 /** Scroll to a section id or element, using Lenis when it is active. */

@@ -95,6 +95,16 @@ export function Footer() {
         <div className="flex flex-col gap-4 py-8 text-[12px] text-white/40 sm:flex-row sm:items-center sm:justify-between">
           <p className="max-w-2xl">
             © {new Date().getFullYear()} Asia Motor · {t.footer.demo}
+            <br />
+            {t.footer.model}{' '}
+            <a className="link-u" href="https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/CarConcept" target="_blank" rel="noreferrer">
+              Car Concept
+            </a>{' '}
+            — Eric Chadwick, Darmstadt Graphics Group,{' '}
+            <a className="link-u" href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">
+              CC BY 4.0
+            </a>
+            ; {t.footer.modelChanges}
           </p>
           <button onClick={() => scrollToTarget('top', 0)} className="flex items-center gap-2 self-start text-white/70 hover:text-white sm:self-auto">
             {t.footer.top} <ArrowUp size={14} />

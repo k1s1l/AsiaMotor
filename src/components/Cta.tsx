@@ -8,7 +8,7 @@ export function Cta() {
   const { t } = useI18n()
   const root = useRef<HTMLElement>(null)
   useReveals(root)
-  const ticker = [...t.hero.chapters, ...t.why.items.map((i) => i.k)]
+  const ticker = [...t.hero.stages, ...t.why.items.map((i) => i.k)]
   return (
     <section ref={root} className="relative overflow-hidden bg-accent text-white">
       <div className="border-b border-white/20 py-4" aria-hidden="true">
