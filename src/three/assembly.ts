@@ -1,9 +1,14 @@
-// Real-time 3D assembly of the hero car. Loaded lazily (own chunk) by AssemblyHero.
+// Real-time cinematic assembly of the hero car. Loaded lazily (own chunk) by the Hero.
 //
-// The model is split into "units" by node name (see STAGES). Every unit gets a pivot at its
-// own centre, starts away from the car and travels to its real position, stage by stage.
-// To use another car (e.g. a licensed Haval H6 model) export it as GLB with named parts and
-// adjust the regular expressions in STAGES — nothing else depends on the model.
+// Sequence (desktop seconds; phones run it faster):
+//   0.0  the dark studio lights up
+//   0.7  the car materialises in the centre as an engineering hologram (edges of every part)
+//   2.9  it comes apart into an exploded view
+//   4.3  units return stage by stage (see models.ts) and turn from wireframe into real parts
+//  11.3  headlights on, the camera closes in and flies around the car, then settles beside the headline
+//
+// The car is split into "units" by node name. Every unit gets a pivot at its own centre, so it
+// can move and turn on its own. Nothing here is specific to one model: see src/three/models.ts.
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js'
@@ -12,49 +17,53 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import gsap from 'gsap'
-
-type From = 'below' | 'above' | 'side' | 'ends' | 'wheel'
-
-interface StageDef {
-  id: string
-  match: RegExp[]
-  from: From
-  /** start time on the desktop timeline, seconds */
-  at: number
-}
-
-export const STAGES: StageDef[] = [
-  { id: 'platform', match: [/^BodyUnderside$/, /^Axles$/, /^InteriorFloor$/], from: 'below', at: 0.5 },
-  { id: 'brakes', match: [/BrakeDisc$/, /BrakePad$/], from: 'side', at: 1.5 },
-  { id: 'cabin', match: [/^Engine$/, /^Interior(?!Door)(?!Steering(Emblem|Wheel))/], from: 'above', at: 2.4 },
-  { id: 'body', match: [/^BodyPillars$/, /^BodyPanelsColor2$/, /^BodyRoofPanel$/, /^BodyRearPanelsColor1$/, /^BodyWindshield$/, /^BodyWindshieldGasket$/], from: 'above', at: 3.5 },
-  { id: 'closures', match: [/^BodyDoor[LR]Color1$/, /^BodyHood$/], from: 'side', at: 4.9 },
-  { id: 'wheels', match: [/^Wheel(Front|Rear)[LR]$/], from: 'wheel', at: 5.9 },
-  { id: 'optics', match: [/^BodyHeadlights$/, /^BodyTaillights$/, /^BodyTurnsignalsRear$/, /^BodyTaillightsPanels$/, /^BodyWindshieldWipers(Base)?$/, /^License Plate$/], from: 'ends', at: 6.9 },
-]
-const FINALE = 8.0
+import { MODEL, type ModelConfig } from './models'
 
 const ACCENT = new THREE.Color('#ff4b1f')
+const TAU = Math.PI * 2
+/** the whole car floats this high in the exploded view */
+const LIFT = 0.3
+/** desktop timeline marks, seconds */
+const REVEAL = 0.7
+const EXPLODE = 2.9
+/** the resting composition next to the headline */
+const REST = { azimuth: 0.7, elevation: 0.17, radius: 10.4, targetY: 0.62, shift: 1, spin: 0.28, grid: 0.12, scan: 0, lights: 1, studio: 1, holo: 1 }
+
+export const STAGES = MODEL.stages
+/** onStage() ids before the first assembly stage */
+export const PRELUDE = { studio: -3, scan: -2, explode: -1 } as const
 
 export interface AssemblyOptions {
   quality: 'high' | 'low'
+  /** PRELUDE ids, then 0…STAGES.length-1, then STAGES.length for the finale */
   onStage?: (index: number) => void
   onFinale?: () => void
   /** desktop layout: shift the car right in the final frame to leave room for the headline */
   layout: () => 'wide' | 'tall'
+  model?: ModelConfig
 }
 
 interface Unit {
   pivot: THREE.Group
   stage: number
   home: THREE.Vector3
-  from: THREE.Vector3
-  fromRot: THREE.Euler
+  apart: THREE.Vector3
+  apartRot: THREE.Euler
   mats: THREE.MeshStandardMaterial[]
   meshes: THREE.Mesh[]
+  /** hologram outline of the unit */
+  edge: THREE.LineBasicMaterial
+  lines: THREE.LineSegments[]
+  /** 0 = front of the car … 1 = rear: the scan reveals the hologram in this order */
+  sweep: number
   /** timeline time at which the part seats (drives the warm glint), -1 = none */
   land: number
   flash: THREE.MeshStandardMaterial[]
+}
+
+const smooth = (a: number, b: number, x: number) => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)))
+  return t * t * (3 - 2 * t)
 }
 
 export class AssemblyScene {
@@ -66,6 +75,9 @@ export class AssemblyScene {
   private units: Unit[] = []
   private tl?: gsap.core.Timeline
   private floor!: THREE.ShaderMaterial
+  private shadow!: THREE.ShadowMaterial
+  private key!: THREE.DirectionalLight
+  private rim!: THREE.DirectionalLight
   private lamps: THREE.SpotLight[] = []
   private lightMats: { mat: THREE.MeshStandardMaterial; peak: number }[] = []
   private raf = 0
@@ -73,8 +85,10 @@ export class AssemblyScene {
   private pointer = new THREE.Vector2()
   private pointerSmooth = new THREE.Vector2()
   private clock = new THREE.Clock()
+  private model: ModelConfig
+  private edgePeak: number
   // animated rig values (GSAP tweens these)
-  rig = { azimuth: -2.5, elevation: 0.62, radius: 11, targetY: 0.55, shift: 0, spin: 0, grid: 1, scan: 0, lights: 0, idle: 0 }
+  rig = { azimuth: -2.2, elevation: 0.5, radius: 13, targetY: 0.9, shift: 0, spin: 0, grid: 0, scan: 0, lights: 0, idle: 0, studio: 0, holo: 0 }
 
   private canvas: HTMLCanvasElement
   private opts: AssemblyOptions
@@ -82,7 +96,10 @@ export class AssemblyScene {
   constructor(canvas: HTMLCanvasElement, opts: AssemblyOptions) {
     this.canvas = canvas
     this.opts = opts
+    this.model = opts.model ?? MODEL
     const high = opts.quality === 'high'
+    // without bloom the lines need a little more strength to read as light
+    this.edgePeak = high ? 0.5 : 0.7
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: !high, powerPreference: 'high-performance' })
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, high ? 1.75 : 1.5))
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
@@ -121,40 +138,40 @@ export class AssemblyScene {
     this.scene.environment = pm.fromScene(env, 0.03).texture
     pm.dispose()
 
-    const key = new THREE.DirectionalLight('#ffffff', 2.4)
-    key.position.set(-3, 9, 4)
-    key.castShadow = true
+    this.key = new THREE.DirectionalLight('#ffffff', 2.4)
+    this.key.position.set(-3, 9, 4)
+    this.key.castShadow = true
     const s = this.opts.quality === 'high' ? 2048 : 1024
-    key.shadow.mapSize.set(s, s)
-    Object.assign(key.shadow.camera, { left: -4, right: 4, top: 4, bottom: -4, near: 1, far: 20 })
-    key.shadow.radius = 5
-    key.shadow.bias = -0.0004
-    const rim = new THREE.DirectionalLight('#ff8a55', 1.4)
-    rim.position.set(5, 2.5, -6)
-    this.scene.add(key, rim)
+    this.key.shadow.mapSize.set(s, s)
+    Object.assign(this.key.shadow.camera, { left: -4, right: 4, top: 4, bottom: -4, near: 1, far: 20 })
+    this.key.shadow.radius = 5
+    this.key.shadow.bias = -0.0004
+    this.rim = new THREE.DirectionalLight('#ff8a55', 1.4)
+    this.rim.position.set(5, 2.5, -6)
+    this.scene.add(this.key, this.rim)
 
-    // engineering floor: dark ground, blueprint grid and a scanning ring (fades out once assembled)
+    // engineering floor: dark ground, blueprint grid and a scanning ring; uLight fades the studio in
     this.floor = new THREE.ShaderMaterial({
-      uniforms: { uGrid: { value: 1 }, uScan: { value: 0 }, uAccent: { value: ACCENT.clone() }, uBg: { value: new THREE.Color('#07080a') } },
+      uniforms: { uGrid: { value: 0 }, uScan: { value: 0 }, uLight: { value: 0 }, uAccent: { value: ACCENT.clone() }, uBg: { value: new THREE.Color('#07080a') } },
       vertexShader: /* glsl */ `varying vec3 vPos; void main(){ vPos = (modelMatrix * vec4(position,1.)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vPos,1.); }`,
       fragmentShader: /* glsl */ `
-        uniform float uGrid; uniform float uScan; uniform vec3 uAccent; uniform vec3 uBg; varying vec3 vPos;
+        uniform float uGrid; uniform float uScan; uniform float uLight; uniform vec3 uAccent; uniform vec3 uBg; varying vec3 vPos;
         float grid(vec2 p, float k){ vec2 q = p * k; vec2 g = abs(fract(q - .5) - .5) / fwidth(q); return 1. - min(min(g.x, g.y), 1.); }
         void main(){
           float r = length(vPos.xz);
-          float fade = smoothstep(11., 2., r);
+          float fade = smoothstep(11., 2., r) * uLight;
           vec3 col = vec3(.03, .032, .036) + vec3(.05) * smoothstep(4.5, 0., r);
           float lines = grid(vPos.xz, 2.) * .07 + grid(vPos.xz, .5) * .18;
           col += uAccent * lines * uGrid * smoothstep(8., 1., r);
           float ring = smoothstep(.16, 0., abs(r - uScan)) * step(.01, uScan) * smoothstep(9., 4., uScan);
-          col += uAccent * ring * .32;
-          gl_FragColor = vec4(mix(uBg, col, fade), 1.);
+          gl_FragColor = vec4(mix(uBg, col, fade) + uAccent * ring * .32, 1.);
           #include <colorspace_fragment>
         }`,
     })
     const floor = new THREE.Mesh(new THREE.CircleGeometry(30, 96), this.floor)
     floor.rotation.x = -Math.PI / 2
-    const shadow = new THREE.Mesh(new THREE.PlaneGeometry(12, 12), new THREE.ShadowMaterial({ opacity: 0.55 }))
+    this.shadow = new THREE.ShadowMaterial({ opacity: 0.55 })
+    const shadow = new THREE.Mesh(new THREE.PlaneGeometry(12, 12), this.shadow)
     shadow.rotation.x = -Math.PI / 2
     shadow.position.y = 0.002
     shadow.receiveShadow = true
@@ -163,6 +180,7 @@ export class AssemblyScene {
 
   // ------------------------------------------------------------------ model
   async load(url: string, onProgress: (p: number) => void) {
+    const cfg = this.model
     const loader = new GLTFLoader()
     loader.setMeshoptDecoder(MeshoptDecoder)
     const gltf = await loader.loadAsync(url, (e) => e.total && onProgress(e.loaded / e.total))
@@ -170,7 +188,7 @@ export class AssemblyScene {
     const root = new THREE.Group()
     root.add(model)
     root.updateMatrixWorld(true)
-    // orientation: height must be the smallest extent (Y up) and the headlights must face +Z
+    // orientation: height must be the smallest extent (Y up) and the front must face +Z
     let size = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3())
     if (size.z < size.y && size.z < size.x) model.rotation.x = -Math.PI / 2
     else if (size.x < size.y && size.x < size.z) model.rotation.z = Math.PI / 2
@@ -178,17 +196,16 @@ export class AssemblyScene {
     size = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3())
     if (size.x > size.z) model.rotation.y += Math.PI / 2
     root.updateMatrixWorld(true)
-    const front = model.getObjectByName('BodyHeadlights')
+    const front = model.getObjectByName(cfg.frontNode)
     if (front) {
       const all = new THREE.Box3().setFromObject(model).getCenter(new THREE.Vector3())
       const head = new THREE.Box3().setFromObject(front).getCenter(new THREE.Vector3())
       if (head.z < all.z) model.rotation.y += Math.PI
       root.updateMatrixWorld(true)
     }
-    // normalise: ~4.6 m long, centred, wheels on the floor
+    // normalise: real length, centred, wheels on the floor
     const box = new THREE.Box3().setFromObject(model)
-    const k = 4.6 / Math.max(size.x, size.z)
-    root.scale.setScalar(k)
+    root.scale.setScalar(cfg.length / Math.max(size.x, size.z))
     root.updateMatrixWorld(true)
     box.setFromObject(model)
     const c = box.getCenter(new THREE.Vector3())
@@ -198,10 +215,25 @@ export class AssemblyScene {
     this.restyle(model)
 
     // collect units, then re-parent each into a pivot at its own centre (keeps world transforms)
+    const stages = cfg.stages
     const found: { node: THREE.Object3D; stage: number }[] = []
     model.traverse((o) => {
-      const s = STAGES.findIndex((st) => st.match.some((r) => r.test(o.name)))
+      const s = stages.findIndex((st) => st.match.some((r) => r.test(o.name)))
       if (s >= 0) found.push({ node: o, stage: s })
+    })
+    const unit = (pivot: THREE.Group, stage: number): Unit => ({
+      pivot,
+      stage,
+      home: pivot.position.clone(),
+      apart: new THREE.Vector3(),
+      apartRot: new THREE.Euler(),
+      mats: [],
+      meshes: [],
+      edge: new THREE.LineBasicMaterial({ color: ACCENT, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }),
+      lines: [],
+      sweep: 0,
+      land: -1,
+      flash: [],
     })
     for (const { node, stage } of found) {
       const b = new THREE.Box3().setFromObject(node)
@@ -211,20 +243,22 @@ export class AssemblyScene {
       this.car.add(pivot)
       pivot.updateMatrixWorld(true)
       pivot.attach(node)
-      this.units.push({ pivot, stage, home: pivot.position.clone(), from: new THREE.Vector3(), fromRot: new THREE.Euler(), mats: [], meshes: [], land: -1, flash: [] })
+      this.units.push(unit(pivot, stage))
     }
-    // anything the rules did not catch stays on the model root; ship it with the body stage
+    // anything the rules did not catch stays on the model root; it ships with `restStage`
     if (model.children.length) {
       const pivot = new THREE.Group()
       this.car.add(pivot)
       while (model.children.length) pivot.attach(model.children[0])
-      this.units.push({ pivot, stage: 3, home: new THREE.Vector3(), from: new THREE.Vector3(), fromRot: new THREE.Euler(), mats: [], meshes: [], land: -1, flash: [] })
+      this.units.push(unit(pivot, Math.max(0, stages.findIndex((s) => s.id === cfg.restStage))))
     }
     root.removeFromParent()
 
-    // per-unit materials (so each part can fade/flash on its own) + start positions
-    let i = 0
-    for (const u of this.units) {
+    // per-unit materials (so each part can fade/flash on its own), hologram edges, exploded positions
+    const edgeCache = new Map<string, THREE.EdgesGeometry>()
+    const angle = this.opts.quality === 'high' ? 30 : 40
+    const half = cfg.length / 2
+    this.units.forEach((u, i) => {
       u.pivot.traverse((o) => {
         const m = o as THREE.Mesh
         if (!m.isMesh) return
@@ -240,54 +274,47 @@ export class AssemblyScene {
         })
         m.material = Array.isArray(m.material) ? cloned : cloned[0]
       })
+      for (const m of u.meshes) {
+        if (!m.visible) continue
+        let g = edgeCache.get(m.geometry.uuid)
+        if (!g) edgeCache.set(m.geometry.uuid, (g = new THREE.EdgesGeometry(m.geometry, angle)))
+        const l = new THREE.LineSegments(g, u.edge)
+        l.raycast = () => {}
+        m.add(l)
+        u.lines.push(l)
+      }
       u.flash = u.mats.filter((m) => !m.emissiveMap && m.emissive && m.name !== 'Glass' && m.emissive.getHex() === 0)
-      this.placeStart(u, i++)
-    }
+      u.sweep = Math.min(1, Math.max(0, (half - u.home.z) / (2 * half)))
+      this.placeApart(u, i)
+    })
     this.findLights()
     this.applyRig()
-    // compile every shader now, so the first assembly frames do not stutter
+    // compile every shader now, so the first frames do not stutter
     await this.renderer.compileAsync(this.scene, this.camera)
   }
 
   private restyle(model: THREE.Object3D) {
-    const plate = this.plateTexture()
+    const { paint, hide } = this.model
+    let plate: THREE.Texture | undefined
     model.traverse((o) => {
       const m = o as THREE.Mesh
+      if (hide.some((r) => r.test(o.name))) o.visible = false
       if (!m.isMesh) return
       for (const mat of (Array.isArray(m.material) ? m.material : [m.material]) as THREE.MeshPhysicalMaterial[]) {
-        switch (mat.name) {
-          case 'Paint 1 Carmine': // main body: titanium silver metallic
-            mat.color.set('#9aa1a9')
-            mat.metalness = 0.85
-            mat.roughness = 0.3
-            mat.clearcoat = 1
-            mat.clearcoatRoughness = 0.04
-            break
-          case 'Paint 2 Carmine': // trim: gloss graphite
-            mat.color.set('#16181c')
-            mat.metalness = 0.5
-            mat.roughness = 0.32
-            break
-          case 'Interior 3 Carmine':
-            mat.color.set('#7a2a14')
-            break
-          case 'Brake': // calipers in the brand colour
-            mat.color.copy(ACCENT)
-            mat.roughness = 0.35
-            mat.emissive.set('#000000')
-            break
-          case 'Dashboard': // its orange glow blooms through the glass
-            mat.emissiveIntensity = 0.25
-            break
-          case 'License':
-            mat.map = plate
-            mat.emissiveMap = null
-            mat.emissive.set('#000000')
-            break
+        const p = paint[mat.name]
+        if (!p) continue
+        if (p.color) mat.color.set(p.color)
+        if (p.metalness !== undefined) mat.metalness = p.metalness
+        if (p.roughness !== undefined) mat.roughness = p.roughness
+        if (p.clearcoat !== undefined) mat.clearcoat = p.clearcoat
+        if (p.clearcoatRoughness !== undefined) mat.clearcoatRoughness = p.clearcoatRoughness
+        if (p.emissive) mat.emissive.set(p.emissive)
+        if (p.emissiveIntensity !== undefined) mat.emissiveIntensity = p.emissiveIntensity
+        if (p.plate) {
+          mat.map = plate ??= this.plateTexture()
+          mat.emissiveMap = null
         }
       }
-      // the source asset carries a third-party emblem on the steering wheel
-      if (/SteeringEmblem/.test(m.name)) m.visible = false
     })
   }
 
@@ -313,32 +340,48 @@ export class AssemblyScene {
     return t
   }
 
-  private placeStart(u: Unit, i: number) {
-    const def = STAGES[u.stage]
+  /** exploded-view position: far enough to read every unit, close enough to stay in frame */
+  private placeApart(u: Unit, i: number) {
     const h = u.home
     const side = Math.abs(h.x) > 0.15 ? Math.sign(h.x) : i % 2 ? 1 : -1
-    const jitter = (n: number) => (Math.sin(i * 12.9898 + n * 78.233) * 43758.5453) % 1
-    switch (def.from) {
-      case 'below':
-        u.from.set(h.x, h.y - 0.45, h.z)
+    const end = Math.sign(h.z || 1)
+    const j = (n: number) => (Math.sin(i * 12.9898 + n * 78.233) * 43758.5453) % 1
+    const off = new THREE.Vector3()
+    const rot = u.apartRot
+    switch (this.model.stages[u.stage].explode) {
+      case 'base':
         break
-      case 'above':
-        u.from.set(h.x * 1.35, h.y + 2.4 + Math.abs(jitter(1)) * 1.4, h.z * 1.25)
-        u.fromRot.set(jitter(2) * 0.35, jitter(3) * 0.5, jitter(4) * 0.35)
+      case 'brake':
+        off.set(Math.abs(h.x) > 0.15 ? side * 0.7 : 0, Math.abs(h.x) > 0.15 ? 0 : -0.12, 0)
+        break
+      case 'up':
+        off.set(h.x * 0.3, 1.05 + Math.abs(j(1)) * 0.3, h.z * 0.12)
+        rot.set(j(2) * 0.12, j(3) * 0.2, j(4) * 0.1)
+        break
+      case 'high':
+        off.set(h.x * 0.45, 1.75 + Math.abs(j(1)) * 0.4, h.z * 0.22)
+        rot.set(j(2) * 0.1, j(3) * 0.15, j(4) * 0.08)
         break
       case 'side':
-        u.from.set(h.x + side * 2.8, h.y + 0.5 + Math.abs(jitter(1)) * 0.6, h.z * 1.15)
-        u.fromRot.set(jitter(2) * 0.3, side * 0.45, jitter(4) * 0.25)
+        if (Math.abs(h.x) < 0.25) {
+          off.set(0, 1.5, h.z * 0.35)
+          rot.set(-0.35 * end, 0, 0)
+        } else {
+          off.set(side * 1.7, 0.35, h.z * 0.1)
+          rot.set(0, side * 0.35, 0)
+        }
         break
       case 'wheel':
-        u.from.set(h.x + side * 2.4, h.y, h.z)
-        u.fromRot.set(-Math.PI * 2 * Math.sign(h.z || 1), side * 0.35, 0)
+        off.set(side * 1.45, 0, h.z * 0.12)
+        rot.set(TAU * end, side * 0.5, 0)
         break
       case 'ends':
-        u.from.set(h.x * 1.4, h.y + 0.25, h.z + Math.sign(h.z || 1) * 2.6)
-        u.fromRot.set(0, jitter(3) * 0.4, 0)
+        off.set(h.x * 0.2, 0.35, end * 1.3)
+        rot.set(0, j(3) * 0.3, 0)
         break
     }
+    u.apart.copy(h).add(off)
+    u.apart.y += LIFT
   }
 
   private findLights() {
@@ -348,15 +391,14 @@ export class AssemblyScene {
         const m = o as THREE.Mesh
         if (!m.isMesh) return
         for (const mat of (Array.isArray(m.material) ? m.material : [m.material]) as THREE.MeshStandardMaterial[]) {
-          if (mat.name === 'Headlight') this.lightMats.push({ mat, peak: 1.3 })
-          if (mat.name === 'Brakelight') this.lightMats.push({ mat, peak: 2.4 })
-          if (mat.name === 'Signallight') this.lightMats.push({ mat, peak: 2 })
+          const peak = this.model.lamps[mat.name]
+          if (peak) this.lightMats.push({ mat, peak })
         }
-        if (/Headlights/.test(m.name)) head.expandByObject(m)
+        if (this.model.headlights.test(m.name)) head.expandByObject(m)
       })
     for (const l of this.lightMats) l.mat.emissiveIntensity = 0
     if (head.isEmpty()) return
-    // two light cones and floor spots in front of the headlights
+    // two pools of light on the floor in front of the car
     const c = head.getCenter(new THREE.Vector3())
     const w = head.max.x - head.min.x
     for (const s of [-1, 1]) {
@@ -370,31 +412,53 @@ export class AssemblyScene {
   }
 
   // ------------------------------------------------------------------ timelines
-  /** Full assembly. `speed` < 1 shortens it (phones). */
+  /** Full sequence. `speed` < 1 shortens it (phones). */
   play(speed = 1) {
     this.tl?.kill()
     const r = this.rig
+    const stages = this.model.stages
     const t = (s: number) => s * speed
     const tl = gsap.timeline({ paused: true, defaults: { ease: 'power3.inOut' } })
-    Object.assign(r, { azimuth: -2.5, elevation: 0.62, radius: 11, targetY: 0.55, shift: 0, spin: 0, grid: 1, scan: 0, lights: 0, idle: 0 })
-    // camera: high rear three-quarter → low front three-quarter
-    tl.to(r, { azimuth: -0.9, elevation: 0.42, radius: 9.6, duration: t(FINALE), ease: 'sine.inOut' }, 0)
-    tl.to(r, { scan: 9, duration: t(FINALE - 0.5), ease: 'none' }, t(0.3))
+    Object.assign(r, { azimuth: -2.2, elevation: 0.5, radius: 13, targetY: 0.9, shift: 0, spin: 0, grid: 0, scan: 0, lights: 0, idle: 0, studio: 0, holo: 0 })
+
+    // 1. studio lights up, 2. the hologram is scanned in, centre stage
+    tl.call(() => this.opts.onStage?.(PRELUDE.studio), [], 0)
+    tl.to(r, { studio: 1, grid: 1, duration: t(1.8), ease: 'power2.inOut' }, 0)
+    tl.call(() => this.opts.onStage?.(PRELUDE.scan), [], t(REVEAL))
+    tl.to(r, { holo: 1, duration: t(2), ease: 'power1.inOut' }, t(REVEAL))
+    tl.to(r, { scan: 9, duration: t(2.8), ease: 'none' }, t(REVEAL))
+    // camera: slow push from the rear three-quarter to a front view of the exploded car…
+    tl.to(r, { azimuth: -0.55, elevation: 0.34, radius: 13.2, targetY: 1.1, duration: t(EXPLODE + 1.6), ease: 'sine.inOut' }, 0)
+    // …then drifts round and down while the car comes together
+    const assembleAt = t(EXPLODE + 1.6)
+    tl.to(r, { azimuth: -1.25, elevation: 0.3, radius: 10.2, targetY: 0.7, duration: t(this.model.finale) - assembleAt, ease: 'sine.inOut' }, assembleAt)
+
+    // 3. exploded view
+    tl.call(() => this.opts.onStage?.(PRELUDE.explode), [], t(EXPLODE))
+    // 4–8. units travel home stage by stage, from wireframe to finished part
     this.units.forEach((u, i) => {
-      const def = STAGES[u.stage]
-      const order = this.units.filter((v, j) => v.stage === u.stage && j < i).length
-      const at = t(def.at + order * 0.09)
-      const dur = t(def.from === 'wheel' ? 1.3 : def.from === 'below' ? 1.1 : 1.25)
-      u.pivot.position.copy(u.from)
-      u.pivot.rotation.copy(u.fromRot)
+      const def = stages[u.stage]
+      const order = this.units.filter((v, k) => v.stage === u.stage && k < i).length
+      u.land = -1
+      u.pivot.position.copy(u.home)
+      u.pivot.rotation.set(0, 0, 0)
       u.mats.forEach((m) => (m.opacity = 0))
-      tl.to(u.mats, { opacity: 1, duration: dur * 0.45, ease: 'power1.out' }, at)
-      tl.to(u.pivot.position, { x: u.home.x, y: u.home.y, z: u.home.z, duration: dur, ease: def.from === 'wheel' ? 'power2.out' : 'expo.out' }, at)
+      const out = t(EXPLODE + u.stage * 0.05 + Math.abs(Math.sin(i * 7.31)) * 0.18)
+      tl.to(u.pivot.position, { x: u.apart.x, y: u.apart.y, z: u.apart.z, duration: t(1.3) }, out)
+      // wheels wait upright and roll in: a full turn back to 0 is invisible at the start
+      const roll = def.explode === 'wheel'
+      tl.to(u.pivot.rotation, { x: roll ? 0 : u.apartRot.x, y: u.apartRot.y, z: u.apartRot.z, duration: t(1.3) }, out)
+      if (roll) tl.set(u.pivot.rotation, { x: u.apartRot.x }, out + t(1.31))
+      const at = t(def.at + order * 0.07)
+      const dur = t(def.explode === 'wheel' ? 1.3 : def.explode === 'base' ? 1 : 1.2)
+      tl.to(u.pivot.position, { x: u.home.x, y: u.home.y, z: u.home.z, duration: dur, ease: def.explode === 'wheel' ? 'power2.out' : 'expo.out' }, at)
       tl.to(u.pivot.rotation, { x: 0, y: 0, z: 0, duration: dur, ease: 'power3.out' }, at)
-      u.land = at + dur * 0.55
+      tl.to(u.mats, { opacity: 1, duration: dur * 0.55, ease: 'power1.inOut' }, at + dur * 0.2)
+      u.land = at + dur * 0.6
     })
-    STAGES.forEach((s, i) => tl.call(() => this.opts.onStage?.(i), [], t(s.at)))
-    this.addFinale(tl, t(FINALE), speed)
+    stages.forEach((s, i) => tl.call(() => this.opts.onStage?.(i), [], t(s.at)))
+    // 9–10. finished: lights, fly-around, rest
+    this.addFinale(tl, t(this.model.finale), speed)
     this.tl = tl
     // draw the first frame before the clock starts, so the opening is never skipped on slow GPUs
     tl.pause(0)
@@ -405,39 +469,49 @@ export class AssemblyScene {
 
   private addFinale(tl: gsap.core.Timeline, at: number, speed: number) {
     const r = this.rig
+    const k = Math.max(speed, 0.75)
+    const orbit = 5.4 * k
+    const go = at + 0.3
     tl.addLabel('finale', at)
-    tl.call(() => this.opts.onStage?.(STAGES.length), [], at)
-    tl.to(r, { azimuth: 0.7, elevation: 0.17, radius: 10.4, targetY: 0.62, shift: 1, duration: 2.4 * Math.max(speed, 0.8), ease: 'power3.inOut' }, at)
-    tl.to(r, { spin: 0.28, duration: 2.6, ease: 'power2.inOut' }, at + 0.2)
-    tl.to(r, { grid: 0.12, duration: 1.6, ease: 'power2.out' }, at)
-    tl.to(r, { lights: 1, duration: 0.9, ease: 'power2.in' }, at + 0.9)
-    tl.call(() => this.opts.onFinale?.(), [], at + 1.2)
-    tl.to(r, { idle: 1, duration: 1.5, ease: 'none' }, at + 2.2)
+    tl.call(() => this.opts.onStage?.(this.model.stages.length), [], at)
+    tl.to(r, { lights: 1, duration: 0.9, ease: 'power2.in' }, at)
+    tl.to(r, { grid: REST.grid, duration: 2, ease: 'power2.out' }, at)
+    // three quarters of a turn round the car, closing in on the way and pulling back to rest
+    tl.to(r, { azimuth: REST.azimuth - TAU, duration: orbit, ease: 'power2.inOut' }, go)
+    tl.to(r, { radius: 7.6, elevation: 0.13, targetY: 0.55, duration: orbit * 0.45, ease: 'power2.inOut' }, go)
+    tl.to(r, { radius: REST.radius, elevation: REST.elevation, targetY: REST.targetY, duration: orbit * 0.55, ease: 'power2.inOut' }, go + orbit * 0.45)
+    tl.to(r, { shift: REST.shift, spin: REST.spin, duration: 2.2, ease: 'power3.inOut' }, go + orbit - 1.5)
+    tl.call(() => this.opts.onFinale?.(), [], go + orbit - 0.5)
+    tl.to(r, { idle: 1, duration: 1.5, ease: 'none' }, go + orbit + 0.7)
   }
 
-  /** Jump straight to the finished car (repeat visits, “Skip”). */
+  /** Finish now: `animate` brings the parts home and the camera to rest quickly (“Skip”), otherwise it is instant (repeat visits). */
   showAssembled(animate = true) {
-    if (this.tl && animate) {
-      // fast-forward what is left of the assembly, then let the finale play
-      const fin = this.tl.labels.finale
-      if (this.tl.time() < fin) {
-        this.tl.pause()
-        gsap.to(this.tl, { time: fin, duration: 0.9, ease: 'power2.inOut', onComplete: () => void this.tl!.play() })
-      }
-      return
-    }
     this.tl?.kill()
-    const tl = gsap.timeline({ paused: true })
+    const r = this.rig
+    const tl = gsap.timeline()
+    const dest = { ...REST, azimuth: REST.azimuth + TAU * Math.round((r.azimuth - REST.azimuth) / TAU) }
     for (const u of this.units) {
       u.land = -1
-      u.pivot.position.copy(u.home)
-      u.pivot.rotation.set(0, 0, 0)
-      u.mats.forEach((m) => (m.opacity = 1))
+      if (animate) {
+        tl.to(u.pivot.position, { x: u.home.x, y: u.home.y, z: u.home.z, duration: 1, ease: 'expo.out' }, 0)
+        tl.to(u.pivot.rotation, { x: 0, y: 0, z: 0, duration: 1, ease: 'power3.out' }, 0)
+        tl.to(u.mats, { opacity: 1, duration: 0.6, ease: 'power1.out' }, 0)
+      } else {
+        u.pivot.position.copy(u.home)
+        u.pivot.rotation.set(0, 0, 0)
+        u.mats.forEach((m) => (m.opacity = 1))
+      }
     }
-    Object.assign(this.rig, { azimuth: -0.6, elevation: 0.3, radius: 8.6, scan: 0, grid: 0.6, lights: 0, idle: 0 })
-    this.addFinale(tl, 0, 1)
+    this.opts.onStage?.(this.model.stages.length)
+    if (animate) {
+      tl.to(r, { ...dest, duration: 1.6, ease: 'power3.inOut' }, 0)
+      tl.call(() => this.opts.onFinale?.(), [], 0.9)
+      tl.to(r, { idle: 1, duration: 1.5, ease: 'none' }, 1.6)
+    } else {
+      Object.assign(r, dest, { idle: 1 })
+    }
     this.tl = tl
-    tl.play(animate ? 0 : tl.duration())
     this.start()
   }
 
@@ -467,17 +541,29 @@ export class AssemblyScene {
     if (tall) this.camera.setViewOffset(w, h, 0, h * 0.24 * r.shift, w, h)
     else this.camera.setViewOffset(w, h, -w * 0.3 * r.shift, h * 0.05 * r.shift, w, h)
     this.car.rotation.y = r.spin
-    // parts only cast shadows once they have materialised; a short warm glint when they seat
+
+    // studio light level
+    this.scene.environmentIntensity = r.studio
+    this.key.intensity = 2.4 * r.studio
+    this.rim.intensity = 1.4 * r.studio
+    this.shadow.opacity = 0.55 * r.studio
+    this.floor.uniforms.uLight.value = r.studio
+    this.floor.uniforms.uGrid.value = r.grid
+    this.floor.uniforms.uScan.value = r.scan
+
     const now = this.tl?.time() ?? 0
     for (const u of this.units) {
-      const on = (u.mats[0]?.opacity ?? 1) > 0.6
-      for (const m of u.meshes) m.castShadow = on && m.userData.shadow
+      const solid = u.mats[0]?.opacity ?? 1
+      // hologram: revealed front to back by the scan, gives way to the real part as it solidifies
+      const e = smooth(u.sweep * 0.6, u.sweep * 0.6 + 0.4, r.holo) * (1 - solid) * this.edgePeak
+      u.edge.opacity = e
+      for (const l of u.lines) l.visible = e > 0.004
+      // parts only cast shadows once they have materialised; a short warm glint when they seat
+      for (const m of u.meshes) m.castShadow = solid > 0.6 && m.userData.shadow
       const d = u.land < 0 ? -1 : now - u.land
       const k = d < 0 || d > 0.5 ? 0 : d < 0.08 ? d / 0.08 : 1 - (d - 0.08) / 0.42
       for (const m of u.flash) m.emissive.copy(ACCENT).multiplyScalar(k * 0.16)
     }
-    this.floor.uniforms.uGrid.value = r.grid
-    this.floor.uniforms.uScan.value = r.scan
     for (const l of this.lightMats) l.mat.emissiveIntensity = l.peak * r.lights
     for (const s of this.lamps) s.intensity = 9 * r.lights
   }

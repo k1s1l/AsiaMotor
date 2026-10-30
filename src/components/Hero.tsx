@@ -8,9 +8,11 @@ import { asset } from '../lib/asset'
 import { Logo } from './Logo'
 import { company } from '../data/company'
 import type { AssemblyScene } from '../three/assembly'
+import { MODEL } from '../three/models'
 
 /**
- * First screen: a real-time 3D assembly of a car (three.js, see src/three/assembly.ts).
+ * First screen: a cinematic real-time 3D assembly of a car (three.js, see src/three/assembly.ts):
+ *  dark studio → hologram → exploded view → assembly stage by stage → headlights and fly-around → headline.
  *  - first visit in a tab: loader → full assembly → finale with headline
  *  - later visits in the same tab: the finished car straight away (with a "replay" button)
  *  - phones: lighter renderer and a shorter timeline
@@ -21,7 +23,6 @@ type Phase = 'loading' | 'assembling' | 'done' | 'static'
 type Tier = 'high' | 'low' | 'static'
 
 const SEEN_KEY = 'am-assembled'
-const MODEL_URL = asset('models/car.glb')
 
 function detectTier(): Tier {
   const q = new URLSearchParams(location.search).get('3d')
@@ -67,7 +68,7 @@ export function Hero() {
   const scene = useRef<AssemblyScene | null>(null)
   const [phase, setPhase] = useState<Phase>('loading')
   const [progress, setProgress] = useState(0)
-  const [stage, setStage] = useState(-1)
+  const [stage, setStage] = useState(-3)
   const tierRef = useRef<Tier>('high')
   const [q, setQ] = useState('')
   const nav = useNavigate()
@@ -95,7 +96,7 @@ export function Hero() {
             setPhase('done')
           },
         })
-        await s.load(MODEL_URL, (p) => setProgress(p))
+        await s.load(MODEL.url, (p) => setProgress(p))
         if (!alive) return s.dispose()
         scene.current = s
         if (new URLSearchParams(location.search).has('3d')) Object.assign(window, { __assembly: s, __gsap: gsap })
@@ -149,6 +150,7 @@ export function Hero() {
       gsap
         .timeline({ defaults: { ease: 'expo.out' } })
         .from('[data-hero-shade]', { autoAlpha: 0, duration: 1.6 }, 0)
+        .from('[data-hero-logo]', { y: 16, autoAlpha: 0, duration: 1.1 }, 0.1)
         .from('[data-hero-eyebrow]', { y: 20, autoAlpha: 0, duration: 1 }, 0.2)
         .from('.hero-title .sw > span', { yPercent: 115, duration: 1.4, stagger: 0.08 }, 0.25)
         .from('[data-hero-fade]', { y: 30, autoAlpha: 0, duration: 1.2, stagger: 0.1 }, 0.7)
@@ -163,13 +165,15 @@ export function Hero() {
 
   const skip = () => scene.current?.showAssembled(true)
   const replay = () => {
-    setStage(-1)
+    setStage(-3)
     setPhase('assembling')
     scene.current?.play(tierRef.current === 'low' ? 0.72 : 1)
   }
 
   const showCopy = phase === 'done' || phase === 'static'
   const stages = t.hero.stages
+  // status line: studio / scan / explode (negative ids), then the stages, then the lights
+  const status = stage < 0 ? t.hero.prelude[Math.max(0, stage + 3)] : stage >= stages.length ? t.hero.lightsOn : stages[stage]
 
   return (
     <section id="top" ref={root} className="relative h-[100svh] min-h-[640px] bg-ink" aria-label="Asia Motor">
@@ -220,7 +224,7 @@ export function Hero() {
                   <span className="relative inline-flex h-2 w-2 rounded-full bg-accent" />
                 </span>
                 {t.hero.assembling}
-                <span className="text-white md:hidden">· {stages[Math.max(0, Math.min(stage, stages.length - 1))]}</span>
+                <span className={`text-white ${stage >= 0 && stage < stages.length ? 'md:hidden' : ''}`}>· {status}</span>
               </p>
               <div className="flex gap-2">
                 <Link to="/catalog" className="btn btn-accent min-h-[44px] px-5 text-[14px]">
@@ -231,7 +235,7 @@ export function Hero() {
                 </button>
               </div>
             </div>
-            <ol className="grid grid-cols-7 gap-1.5 sm:gap-3">
+            <ol className="grid grid-cols-8 gap-1.5 sm:gap-3">
               {stages.map((s, i) => (
                 <li key={s} className="min-w-0">
                   <span className="block h-[2px] overflow-hidden bg-white/12">
@@ -252,6 +256,9 @@ export function Hero() {
         data-hero-copy
         className={`container-x relative z-10 flex h-full flex-col justify-end pb-24 pt-28 sm:pb-28 lg:justify-center lg:pb-16 lg:pt-24 ${showCopy ? '' : 'pointer-events-none invisible'}`}
       >
+        <div data-hero-logo className="mb-7 text-white max-lg:hidden">
+          <Logo className="origin-left scale-[1.35]" />
+        </div>
         <p data-hero-eyebrow className="eyebrow flex items-center gap-3 text-white/70">
           <span className="h-px w-10 bg-accent" />
           {t.hero.eyebrow}
