@@ -1,8 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { getProductById } from './data/catalog'
-import type { Car } from './data/vehicles'
+import { isCar, type Car } from './data/vehicles'
+import type { FormKind } from './lib/api'
 
-export type Overlay = null | 'menu' | 'catalog' | 'search' | 'cart' | 'car'
+export type Overlay = null | 'menu' | 'catalog' | 'search' | 'cart' | 'car' | 'request'
+export type RequestKind = Exclude<FormKind, 'order'>
 
 interface Store {
   cart: Record<string, number>
@@ -15,6 +17,9 @@ interface Store {
   recent: string[]
   viewed: (id: string) => void
   overlay: Overlay
+  /** which form the request dialog shows */
+  request: { kind: RequestKind; product?: string }
+  ask: (kind: RequestKind, product?: string) => void
   open: (o: Overlay) => void
   close: () => void
   toast: string | null
@@ -72,12 +77,13 @@ function flyToCart(from: HTMLElement | null | undefined) {
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [cart, setCart] = useState<Record<string, number>>(() =>
-    load('am-cart', {}, (v) => !!v && typeof v === 'object' && Object.entries(v as object).every(([id, q]) => getProductById(id) && typeof q === 'number')),
+    load('am-cart', {}, (v) => !!v && typeof v === 'object' && Object.entries(v as object).every(([id, q]) => getProductById(id) && typeof q === 'number' && q >= 1)),
   )
-  const [car, setCarState] = useState<Car | null>(() => load('am-car', null, (v) => !!v && typeof (v as Car).make === 'string'))
+  const [car, setCarState] = useState<Car | null>(() => load('am-car', null, isCar))
   const [recent, setRecent] = useState<string[]>(() => load('am-recent', [], (v) => Array.isArray(v)))
   const [overlay, setOverlay] = useState<Overlay>(null)
   const [toast, setToast] = useState<string | null>(null)
+  const [request, setRequest] = useState<Store['request']>({ kind: 'callback' })
   const timer = useRef(0)
 
   useEffect(() => save('am-cart', cart), [cart])
@@ -96,13 +102,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       cartCount: Object.values(cart).reduce((a, b) => a + b, 0),
       add: (id, qty = 1, from) => {
         flyToCart(from)
-        setCart((c) => ({ ...c, [id]: (c[id] ?? 0) + qty }))
+        // never more than the stock of the price list
+        setCart((c) => ({ ...c, [id]: Math.min((c[id] ?? 0) + qty, getProductById(id)?.qty ?? 1) }))
       },
       setQty: (id, qty) =>
         setCart((c) => {
           const next = { ...c }
           if (qty <= 0) delete next[id]
-          else next[id] = Math.min(99, qty)
+          else next[id] = Math.min(qty, getProductById(id)?.qty ?? 1)
           return next
         }),
       clearCart: () => setCart({}),
@@ -112,11 +119,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       viewed: (id) => setRecent((r) => [id, ...r.filter((x) => x !== id)].slice(0, 12)),
       overlay,
       open: setOverlay,
+      request,
+      ask: (kind, product) => {
+        setRequest({ kind, product })
+        setOverlay('request')
+      },
       close: () => setOverlay(null),
       toast,
       notify,
     }),
-    [cart, car, recent, overlay, toast, notify],
+    [cart, car, recent, overlay, request, toast, notify],
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

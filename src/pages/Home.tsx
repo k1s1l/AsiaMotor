@@ -4,7 +4,7 @@ import { ArrowRight, ArrowUpRight, Mail, Phone } from 'lucide-react'
 import { useI18n } from '../i18n'
 import { useStore } from '../store'
 import { countBy, getProductById, products, query, type Product } from '../data/catalog'
-import { taxonomy } from '../data/taxonomy'
+import { findCat, findSub, taxonomy } from '../data/taxonomy'
 import { makes, carLabel } from '../data/vehicles'
 import { company } from '../data/company'
 import { Hero } from '../components/Hero'
@@ -17,7 +17,7 @@ const orgLd = {
   '@context': 'https://schema.org',
   '@type': 'AutoPartsStore',
   name: 'Asia Motor',
-  description: 'Запчастини для китайських автомобілів: Haval, Chery, Geely, Great Wall, BYD, Lifan.',
+  description: 'Запчастини для китайських автомобілів: Haval, Chery, Geely, Great Wall, BYD, JAC та інших марок.',
   foundingDate: String(company.since),
   email: company.email,
   telephone: company.phones.map((p) => p.href.replace('tel:', '')),
@@ -26,7 +26,7 @@ const orgLd = {
 
 export function HomePage() {
   const { t, lang } = useI18n()
-  const { car, recent } = useStore()
+  const { car, recent, ask } = useStore()
   const nav = useNavigate()
   const root = useRef<HTMLDivElement>(null)
   useReveals(root)
@@ -38,10 +38,24 @@ export function HomePage() {
   })
 
   const counts = useMemo(() => countBy(products, (p) => p.cat), [])
-  const popular = useMemo(() => query({ sort: 'popular' }).slice(0, 12), [])
-  const specials = useMemo(() => products.filter((p) => p.oldPrice).sort((a, b) => b.popularity - a.popularity).slice(0, 12), [])
-  const newest = useMemo(() => query({ sort: 'new' }).slice(0, 12), [])
-  const forCar = useMemo(() => (car ? query({ car, sort: 'popular' }).slice(0, 12) : []), [car])
+  const forCar = useMemo(() => (car ? query({ car }).slice(0, 12) : []), [car])
+  // shelves of the real assortment: the most requested part groups
+  const shelves = useMemo(
+    () =>
+      (
+        [
+          ['halma', 'kolodky'],
+          ['optyka', 'fary'],
+          ['to', 'filtry-olyvni'],
+          ['pidviska', 'amortyzatory'],
+        ] as const
+      ).map(([c, s]) => {
+        const cat = findCat(c)!
+        const sub = findSub(cat, s)!
+        return { key: s, sub, to: `/catalog/${c}/${s}`, items: query({ cat: c, sub: s }).slice(0, 12) }
+      }),
+    [],
+  )
   const recentItems = recent.map(getProductById).filter(Boolean) as Product[]
 
   return (
@@ -63,10 +77,10 @@ export function HomePage() {
             <CarPicker dark idPrefix="home-car" onSubmit={() => nav('/catalog')} />
           </div>
           <p className="mt-4 text-[13px] text-white/45">
-            {t.car.demoNote}{' '}
-            <a href={`mailto:${company.email}?subject=${encodeURIComponent('Підбір за VIN')}`} className="link-u text-white/70">
+            {t.car.note}{' '}
+            <button onClick={() => ask('vin')} className="link-u text-white/70">
               {t.car.vinTitle} →
-            </a>
+            </button>
           </p>
         </div>
       </section>
@@ -80,7 +94,7 @@ export function HomePage() {
                 {t.home.catsTitle}
               </h2>
               <p data-reveal className="mt-3 text-[16px] text-ink/60">
-                {t.home.catsLead}
+                {t.home.catsLead(products.length)}
               </p>
             </div>
             <Link to="/catalog" className="btn btn-dark">
@@ -121,8 +135,9 @@ export function HomePage() {
 
         <div className="container-x space-y-20 pb-20 lg:space-y-24">
           {car && <ProductRail title={t.home.forCar(carLabel(car))} items={forCar} to="/catalog" />}
-          <ProductRail title={t.home.popular} items={popular} to="/catalog" />
-          <ProductRail title={t.home.specials} lead={t.home.specialsLead} items={specials} to="/catalog?sort=price-asc" />
+          {shelves.slice(0, 2).map((sh) => (
+            <ProductRail key={sh.key} title={sh.sub[lang]} items={sh.items} to={sh.to} />
+          ))}
         </div>
       </div>
 
@@ -167,7 +182,9 @@ export function HomePage() {
 
       <div className="bg-paper py-20 text-ink lg:py-24">
         <div className="container-x space-y-20 lg:space-y-24">
-          <ProductRail title={t.home.newest} items={newest} to="/catalog?sort=new" />
+          {shelves.slice(2).map((sh) => (
+            <ProductRail key={sh.key} title={sh.sub[lang]} items={sh.items} to={sh.to} />
+          ))}
 
           {/* makes & models */}
           <section>
@@ -209,9 +226,9 @@ export function HomePage() {
             <a href={company.phones[0].href} className="btn btn-dark min-h-[56px]">
               <Phone size={17} /> {t.home.ctaCall}: {company.phones[0].display}
             </a>
-            <a href={`mailto:${company.email}?subject=${encodeURIComponent('Підбір за VIN')}`} className="btn min-h-[56px] border border-white/60 text-white before:bg-white hover:text-ink">
+            <button onClick={() => ask('vin')} className="btn min-h-[56px] border border-white/60 text-white before:bg-white hover:text-ink">
               <Mail size={17} /> {t.home.ctaVin}
-            </a>
+            </button>
           </div>
         </div>
       </section>

@@ -1,11 +1,13 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
-import { ArrowRight, CircleCheck, Info, Mail, Minus, Phone, Plus, ShoppingBag, Trash2 } from 'lucide-react'
+import { ArrowRight, CircleCheck, Info, Loader2, Minus, Phone, Plus, ShoppingBag, Trash2 } from 'lucide-react'
 import { useI18n } from '../i18n'
 import { useStore } from '../store'
 import { formatPrice, getProductById, type Product } from '../data/catalog'
 import { company } from '../data/company'
-import { Crumbs, DemoTag, FitBadge, Stock } from '../components/shop/bits'
+import { Crumbs, FitBadge, ProductImage, Stock } from '../components/shop/bits'
+import { Field, Honeypot, SendError } from '../components/forms/RequestForm'
+import { ApiError, send, validEmail, validPhone } from '../lib/api'
 import { productPath } from '../components/shop/ProductCard'
 import { useSeo } from '../lib/seo'
 
@@ -15,14 +17,15 @@ function useLines() {
     const lines = Object.entries(cart)
       .map(([id, qty]) => ({ p: getProductById(id), qty }))
       .filter((l): l is { p: Product; qty: number } => !!l.p)
-    const uah = lines.filter((l) => l.p.currency === 'UAH').reduce((s, l) => s + l.p.price * l.qty, 0)
-    return { lines, uah, mixed: lines.some((l) => l.p.currency !== 'UAH') }
+    const uah = lines.reduce((s, l) => s + l.p.price * l.qty, 0)
+    // body parts and optics ship only after full prepayment (store rule)
+    return { lines, uah, prepaid: lines.some((l) => l.p.cat === 'kuzov' || l.p.cat === 'optyka') }
   }, [cart])
 }
 
 function Summary({ cta }: { cta?: React.ReactNode }) {
   const { t, lang } = useI18n()
-  const { lines, uah, mixed } = useLines()
+  const { lines, uah } = useLines()
   return (
     <aside className="rounded-[22px] border border-ink/10 bg-white p-5 sm:p-6 lg:sticky lg:top-24">
       <p className="font-display text-lg font-semibold uppercase tracking-tight">{t.checkout.summary}</p>
@@ -32,7 +35,7 @@ function Summary({ cta }: { cta?: React.ReactNode }) {
             <span className="line-clamp-2 text-ink/70">
               {p.name[lang]} × {qty}
             </span>
-            <span className="shrink-0 font-semibold tabular-nums">{formatPrice(p.price * qty, p.currency)}</span>
+            <span className="shrink-0 font-semibold tabular-nums">{formatPrice(p.price * qty)}</span>
           </li>
         ))}
       </ul>
@@ -40,7 +43,6 @@ function Summary({ cta }: { cta?: React.ReactNode }) {
         <span className="text-ink/60">{t.cart.total}</span>
         <span className="font-display text-[28px] font-semibold tabular-nums">{formatPrice(uah)}</span>
       </div>
-      {mixed && <p className="mt-2 text-[12.5px] text-ink/55">{t.cart.mixed}</p>}
       {cta}
     </aside>
   )
@@ -75,13 +77,10 @@ export function CartPage() {
               {lines.map(({ p, qty }) => (
                 <li key={p.id} className="grid animate-[cardIn_.4s_var(--ease-out-expo)_both] grid-cols-[88px_1fr] gap-4 rounded-2xl border border-ink/8 bg-white p-3 sm:grid-cols-[120px_1fr_auto] sm:p-4">
                   <Link to={productPath(p)} className="overflow-hidden rounded-xl bg-[#e9e7e2]">
-                    <img src={p.images[0]} alt="" className="aspect-square w-full object-cover" />
+                    <ProductImage p={p} className="aspect-square" />
                   </Link>
                   <div className="min-w-0 space-y-1.5">
-                    <div className="flex gap-2">
-                      <DemoTag p={p} />
-                      <span className="font-mono text-[12px] text-ink/50">{p.article}</span>
-                    </div>
+                    <span className="font-mono text-[12px] text-ink/50">{p.article || p.code}</span>
                     <Link to={productPath(p)} className="block font-semibold leading-snug hover:text-accent">
                       {p.name[lang]}
                     </Link>
@@ -96,11 +95,11 @@ export function CartPage() {
                         <Minus size={14} />
                       </button>
                       <span className="w-7 text-center font-semibold tabular-nums">{qty}</span>
-                      <button className="grid h-10 w-10 place-items-center" onClick={() => setQty(p.id, qty + 1)} aria-label="+1">
+                      <button className="grid h-10 w-10 place-items-center disabled:opacity-30" disabled={qty >= p.qty} title={t.cart.maxQty(p.qty)} onClick={() => setQty(p.id, qty + 1)} aria-label="+1">
                         <Plus size={14} />
                       </button>
                     </div>
-                    <span className="font-display text-[19px] font-semibold tabular-nums">{formatPrice(p.price * qty, p.currency)}</span>
+                    <span className="font-display text-[19px] font-semibold tabular-nums">{formatPrice(p.price * qty)}</span>
                     <button onClick={() => setQty(p.id, 0)} className="flex items-center gap-1 text-[13px] text-ink/45 hover:text-accent">
                       <Trash2 size={14} /> {t.cart.remove}
                     </button>
@@ -127,40 +126,40 @@ export function CartPage() {
   )
 }
 
-const phoneOk = (v: string) => /^(\+?38)?0\d{9}$/.test(v.replace(/[\s()-]/g, ''))
-
 export function CheckoutPage() {
-  const { t, lang } = useI18n()
+  const { t } = useI18n()
   const { clearCart } = useStore()
-  const { lines } = useLines()
-  const [form, setForm] = useState({ name: '', phone: '', email: '', method: 'np', city: '', branch: '', address: '', payment: 'cod', comment: '' })
+  const { lines, prepaid } = useLines()
+  const started = useRef(Date.now())
+  const [form, setForm] = useState({ name: '', phone: '', email: '', method: 'np', city: '', branch: '', payment: 'card', comment: '', website: '' })
   const [touched, setTouched] = useState(false)
-  const [done, setDone] = useState<null | { lines: typeof lines; no: string }>(null)
+  const [state, setState] = useState<{ s: 'idle' | 'sending' | 'error'; code?: string }>({ s: 'idle' })
+  const [done, setDone] = useState<null | { id: string }>(null)
   useSeo({ title: `${t.checkout.title} | Asia Motor`, description: t.checkout.title, path: '/checkout', noindex: true })
 
   const errors: Record<string, string> = {}
   if (!form.name.trim()) errors.name = t.checkout.required
-  if (!phoneOk(form.phone)) errors.phone = form.phone ? t.checkout.badPhone : t.checkout.required
+  if (!validPhone(form.phone)) errors.phone = form.phone ? t.checkout.badPhone : t.checkout.required
+  if (form.email && !validEmail(form.email)) errors.email = t.checkout.badEmail
   if (form.method !== 'pickup' && !form.city.trim()) errors.city = t.checkout.required
-  if (form.method === 'np' && !form.branch.trim()) errors.branch = t.checkout.required
-  if (form.method === 'npCourier' && !form.address.trim()) errors.address = t.checkout.required
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setForm({ ...form, [k]: e.target.value })
-
-  const mailBody = (ls: typeof lines) => encodeURIComponent([...ls.map(({ p, qty }) => `${p.name[lang]} — ${p.article} × ${qty}`), '', `${form.name}, ${form.phone}`, form.comment].join('\n'))
+  if (form.method !== 'pickup' && !form.branch.trim()) errors.branch = t.checkout.required
+  if (prepaid && form.payment === 'cod') errors.payment = t.checkout.codBlocked
+  const set = (k: keyof typeof form) => (v: string) => setForm((f) => ({ ...f, [k]: v }))
+  const err = (k: string) => (touched ? errors[k] : undefined)
 
   if (done)
     return (
       <div className="min-h-[80vh] bg-paper pb-24 pt-[120px] text-ink">
-        <div className="container-x max-w-2xl text-center">
+        <div className="container-x max-w-2xl text-center" role="status">
           <CircleCheck size={52} className="mx-auto text-accent" />
-          <h1 className="mt-5 font-display text-[clamp(24px,3vw,36px)] font-semibold uppercase tracking-tight">{t.checkout.successTitle}</h1>
+          <h1 className="mt-5 font-display text-[clamp(24px,3vw,36px)] font-semibold uppercase tracking-tight">{t.checkout.successTitle(done.id)}</h1>
           <p className="mx-auto mt-4 max-w-lg leading-relaxed text-ink/65">{t.checkout.successText}</p>
           <div className="mt-8 flex flex-wrap justify-center gap-2">
-            <a href={company.phones[0].href} className="btn btn-accent">
+            <Link to="/catalog" className="btn btn-dark">
+              {t.cart.continue}
+            </Link>
+            <a href={company.phones[0].href} className="btn btn-line">
               <Phone size={16} /> {company.phones[0].display}
-            </a>
-            <a href={`mailto:${company.email}?subject=${encodeURIComponent('Замовлення з сайту')}&body=${mailBody(done.lines)}`} className="btn btn-line">
-              <Mail size={16} /> {t.checkout.mail}
             </a>
           </div>
         </div>
@@ -177,23 +176,9 @@ export function CheckoutPage() {
       </div>
     )
 
-  const input = (k: keyof typeof form, label: string, type = 'text', auto?: string) => (
-    <label className="block">
-      <span className="text-[13px] font-medium text-ink/65">{label}</span>
-      <input
-        type={type}
-        value={form[k]}
-        onChange={set(k)}
-        autoComplete={auto}
-        aria-invalid={touched && !!errors[k]}
-        className={`field mt-1.5 min-h-[50px] rounded-xl border bg-white px-4 text-[15px] ${touched && errors[k] ? 'border-red-400' : 'border-ink/15 focus:border-ink/50'}`}
-      />
-      {touched && errors[k] && <span className="mt-1 block text-[12.5px] text-red-600">{errors[k]}</span>}
-    </label>
-  )
-  const radio = (k: 'method' | 'payment', v: string, label: string) => (
-    <label key={v} className={`flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3.5 text-[15px] transition-colors ${form[k] === v ? 'border-ink bg-white' : 'border-ink/12 bg-white/60 hover:border-ink/40'}`}>
-      <input type="radio" name={k} value={v} checked={form[k] === v} onChange={() => setForm({ ...form, [k]: v })} className="h-[18px] w-[18px] accent-[#ff4b1f]" />
+  const radio = (k: 'method' | 'payment', v: string, label: string, disabled?: boolean) => (
+    <label key={v} className={`flex items-center gap-3 rounded-xl border px-4 py-3.5 text-[15px] transition-colors ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'} ${form[k] === v ? 'border-ink bg-white' : 'border-ink/12 bg-white/60 hover:border-ink/40'}`}>
+      <input type="radio" name={k} value={v} disabled={disabled} checked={form[k] === v} onChange={() => set(k)(v)} className="h-[18px] w-[18px] accent-[#ff4b1f]" />
       {label}
     </label>
   )
@@ -205,16 +190,27 @@ export function CheckoutPage() {
         <h1 className="mt-5 font-display text-[clamp(26px,3.6vw,44px)] font-semibold uppercase tracking-[-0.03em]">{t.checkout.title}</h1>
         <form
           noValidate
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault()
             setTouched(true)
-            if (Object.keys(errors).length) return
-            setDone({ lines, no: `DEMO-${Date.now().toString().slice(-6)}` })
-            clearCart()
-            window.scrollTo(0, 0)
+            if (Object.keys(errors).length) {
+              document.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()
+              return
+            }
+            if (state.s === 'sending') return
+            setState({ s: 'sending' })
+            try {
+              const r = await send('order', { ...form, items: lines.map(({ p, qty }) => ({ id: p.id, qty })), elapsed: Date.now() - started.current })
+              clearCart()
+              setDone(r)
+              window.scrollTo(0, 0)
+            } catch (ex) {
+              setState({ s: 'error', code: (ex as ApiError).code })
+            }
           }}
-          className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_380px]"
+          className="relative mt-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_380px]"
         >
+          <Honeypot value={form.website} onChange={set('website')} />
           <div className="space-y-6">
             {[
               {
@@ -222,9 +218,11 @@ export function CheckoutPage() {
                 title: t.checkout.contacts,
                 body: (
                   <div className="grid gap-3 sm:grid-cols-2">
-                    {input('name', t.checkout.name, 'text', 'name')}
-                    {input('phone', t.checkout.phone, 'tel', 'tel')}
-                    <div className="sm:col-span-2">{input('email', t.checkout.email, 'email', 'email')}</div>
+                    <Field id="co-name" label={t.checkout.name} value={form.name} onChange={set('name')} error={err('name')} auto="name" />
+                    <Field id="co-phone" label={t.checkout.phone} type="tel" inputMode="tel" value={form.phone} onChange={set('phone')} error={err('phone')} auto="tel" placeholder="0XX XXX XX XX" />
+                    <div className="sm:col-span-2">
+                      <Field id="co-email" label={t.checkout.email} type="email" inputMode="email" value={form.email} onChange={set('email')} error={err('email')} auto="email" />
+                    </div>
                   </div>
                 ),
               },
@@ -233,11 +231,11 @@ export function CheckoutPage() {
                 title: t.checkout.deliveryStep,
                 body: (
                   <div className="space-y-3">
-                    <div className="grid gap-2">{(['np', 'npCourier', 'pickup'] as const).map((m) => radio('method', m, t.checkout.methods[m]))}</div>
+                    <div className="grid gap-2">{(['np', 'carrier', 'pickup'] as const).map((m) => radio('method', m, t.checkout.methods[m]))}</div>
                     {form.method !== 'pickup' && (
                       <div className="grid animate-[cardIn_.35s_var(--ease-out-expo)_both] gap-3 sm:grid-cols-2">
-                        {input('city', t.checkout.city, 'text', 'address-level2')}
-                        {form.method === 'np' ? input('branch', t.checkout.branch) : input('address', t.checkout.address, 'text', 'street-address')}
+                        <Field id="co-city" label={t.checkout.city} value={form.city} onChange={set('city')} error={err('city')} auto="address-level2" />
+                        <Field id="co-branch" label={t.checkout.branch} value={form.branch} onChange={set('branch')} error={err('branch')} />
                       </div>
                     )}
                   </div>
@@ -248,14 +246,12 @@ export function CheckoutPage() {
                 title: t.checkout.paymentStep,
                 body: (
                   <div className="space-y-3">
-                    <div className="grid gap-2">{(['cod', 'card', 'invoice'] as const).map((m) => radio('payment', m, t.checkout.payments[m]))}</div>
+                    <div className="grid gap-2">{(['card', 'cod'] as const).map((m) => radio('payment', m, t.checkout.payments[m], m === 'cod' && prepaid))}</div>
+                    {err('payment') && <p className="text-[12.5px] text-red-600">{err('payment')}</p>}
                     <p className="flex gap-2 text-[13px] text-ink/55">
-                      <Info size={15} className="mt-0.5 shrink-0" /> {t.checkout.paymentNote}
+                      <Info size={15} className="mt-0.5 shrink-0" /> {prepaid ? t.checkout.codBlocked : t.checkout.paymentNote}
                     </p>
-                    <label className="block">
-                      <span className="text-[13px] font-medium text-ink/65">{t.checkout.comment}</span>
-                      <textarea value={form.comment} onChange={set('comment')} rows={3} className="field mt-1.5 rounded-xl border border-ink/15 bg-white px-4 py-3 text-[15px] focus:border-ink/50" />
-                    </label>
+                    <Field id="co-comment" label={t.checkout.comment} value={form.comment} onChange={set('comment')} area />
                   </div>
                 ),
               },
@@ -271,12 +267,26 @@ export function CheckoutPage() {
           </div>
           <Summary
             cta={
-              <>
-                <button type="submit" className="btn btn-accent mt-5 w-full min-h-[56px]">
-                  {t.checkout.submit}
+              <div className="mt-5 space-y-3">
+                {state.s === 'error' && (
+                  <div>
+                    <p className="mb-2 font-semibold text-red-700">{t.checkout.failTitle}</p>
+                    <SendError code={state.code ?? ''} />
+                  </div>
+                )}
+                <button type="submit" disabled={state.s === 'sending'} className="btn btn-accent w-full min-h-[56px] disabled:opacity-70">
+                  {state.s === 'sending' ? (
+                    <>
+                      <Loader2 size={18} className="animate-spin" /> {t.checkout.sending}
+                    </>
+                  ) : state.s === 'error' ? (
+                    t.checkout.retry
+                  ) : (
+                    t.checkout.submit
+                  )}
                 </button>
-                <p className="mt-3 text-[12.5px] leading-relaxed text-ink/50">{t.common.demoSite}: {t.checkout.paymentNote}</p>
-              </>
+                <p className="text-[12.5px] leading-relaxed text-ink/50">{t.checkout.consent}</p>
+              </div>
             }
           />
         </form>

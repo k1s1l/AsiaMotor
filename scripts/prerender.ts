@@ -4,7 +4,7 @@
 // Run after `vite build`: BASE_PATH=/AsiaMotor/ tsx scripts/prerender.ts
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { products, compatLabel, formatPrice } from '../src/data/catalog'
+import { products, compatLabel, formatPrice, priceDate } from '../src/data/catalog'
 import { taxonomy } from '../src/data/taxonomy'
 import { makes } from '../src/data/vehicles'
 import { company } from '../src/data/company'
@@ -47,7 +47,7 @@ const pages: Page[] = [
   {
     path: '/',
     title: 'Asia Motor — запчастини для китайських авто: Haval, Chery, Geely | Запоріжжя',
-    description: 'Запчастини для Haval, Chery, Geely, Great Wall, BYD та Lifan. Підбір за вашим авто, власний склад у Запоріжжі й доставка по всій Україні.',
+    description: 'Запчастини для Haval, Chery, Geely, Great Wall, BYD, JAC та інших марок: понад 2 600 позицій у наявності. Склад у Запоріжжі, доставка по всій Україні.',
     h1: 'Запчастини для китайських автомобілів',
     links: taxonomy.map((c) => [`/catalog/${c.slug}`, c.ua]),
     jsonLd: [org],
@@ -56,7 +56,7 @@ const pages: Page[] = [
   {
     path: '/catalog',
     title: 'Каталог запчастин — купити в Україні | Asia Motor',
-    description: `Каталог запчастин для китайських авто, позицій: ${products.length}. Підбір за авто, доставка по Україні.`,
+    description: `Каталог запчастин для китайських авто: ${products.length} позицій у наявності. Ціни станом на ${priceDate.split('-').reverse().join('.')}. Доставка по Україні.`,
     h1: 'Каталог запчастин',
     links: taxonomy.map((c) => [`/catalog/${c.slug}`, c.ua]),
     priority: 0.9,
@@ -67,7 +67,7 @@ const pages: Page[] = [
       {
         path: `/catalog/${c.slug}`,
         title: `${c.ua} — купити в Україні | Asia Motor`,
-        description: `${c.ua} для китайських авто: Haval, Chery, Geely, Great Wall, BYD, Lifan. Позицій: ${n}. Підбір за авто, доставка по Україні, склад у Запоріжжі.`,
+        description: `${c.ua} для китайських авто: Haval, Chery, Geely, Great Wall, BYD, JAC. В наявності: ${n} поз. Склад у Запоріжжі, доставка по Україні.`,
         h1: c.ua,
         links: c.subs.map((s) => [`/catalog/${c.slug}/${s.slug}`, s.ua] as [string, string]),
         jsonLd: [crumbs([['Каталог запчастин', '/catalog'], [c.ua, `/catalog/${c.slug}`]])],
@@ -78,7 +78,7 @@ const pages: Page[] = [
         return {
           path: `/catalog/${c.slug}/${s.slug}`,
           title: `${s.ua} — купити в Україні | Asia Motor`,
-          description: `${s.ua} для китайських авто: Haval, Chery, Geely, Great Wall, BYD, Lifan. Позицій: ${list.length}. Підбір за авто, доставка по Україні, склад у Запоріжжі.`,
+          description: `${s.ua} для китайських авто: Haval, Chery, Geely, Great Wall, BYD, JAC. В наявності: ${list.length} поз. Склад у Запоріжжі, доставка по Україні.`,
           h1: s.ua,
           links: list.map((p) => [`/product/${p.slug}`, p.name.ua] as [string, string]),
           jsonLd: [crumbs([['Каталог запчастин', '/catalog'], [c.ua, `/catalog/${c.slug}`], [s.ua, `/catalog/${c.slug}/${s.slug}`]])],
@@ -102,7 +102,7 @@ const pages: Page[] = [
       return {
         path: `/cars/${mk.slug}/${md.slug}`,
         title: `Запчастини для ${name} — купити в Україні, ціни | Asia Motor`,
-        description: `Позицій для ${name} у каталозі: ${list.length} — кузов, підвіска, гальма, двигун, оптика та деталі для ТО. ${md.years[0]}–${md.years[1]}, ${md.engines.join(', ')}.`,
+        description: `Запчастини для ${name} у наявності: ${list.length} поз. — кузов, підвіска, гальма, двигун, оптика та деталі для ТО. Доставка по Україні.`,
         h1: `Запчастини для ${name}`,
         links: list.map((p) => [`/product/${p.slug}`, p.name.ua] as [string, string]),
         jsonLd: [crumbs([[mk.name, `/cars/${mk.slug}`], [name, `/cars/${mk.slug}/${md.slug}`]])],
@@ -113,36 +113,32 @@ const pages: Page[] = [
   ...products.map((p) => {
     const cat = taxonomy.find((c) => c.slug === p.cat)!
     const sub = cat.subs.find((s) => s.slug === p.sub)!
-    const availability = { in: 'InStock', low: 'LimitedAvailability', order: 'BackOrder', ask: 'InStoreOnly' }[p.stock]
+    const cars = p.compat.slice(0, 5).map(compatLabel).join(', ')
     return {
       path: `/product/${p.slug}`,
       title: `${p.name.ua} — купити, ціна | Asia Motor`,
-      description: `${p.name.ua}. Артикул ${p.article}. ${p.compat.map(compatLabel).join(', ')}. ${p.source === 'asiamotor' ? `Ціна ${formatPrice(p.price, p.currency)}. ` : ''}Доставка по Україні, склад у Запоріжжі.`,
+      description: `${p.name.ua}. Артикул ${p.article || p.code}. ${cars ? `${cars}${p.compat.length > 5 ? '…' : ''}. ` : ''}Ціна ${formatPrice(p.price)}, в наявності. Доставка по Україні, склад у Запоріжжі.`,
       h1: p.name.ua,
       jsonLd: [
         {
           '@context': 'https://schema.org',
           '@type': 'Product',
           name: p.name.ua,
-          sku: p.article,
-          mpn: p.article,
-          image: p.images.map((src) => abs(src)),
-          description: p.description.ua,
-          ...(p.manufacturer !== '—' ? { brand: { '@type': 'Brand', name: p.manufacturer } } : {}),
+          sku: p.code,
+          ...(p.article ? { mpn: p.article } : {}),
+          ...(p.images.length ? { image: p.images.map((src) => (/^https:/.test(src) ? src : ORIGIN + src)) } : {}),
           category: `${cat.ua} / ${sub.ua}`,
-          // demo items are not real offers
-          ...(p.source === 'asiamotor' ? { offers: { '@type': 'Offer', price: p.price, priceCurrency: p.currency, availability: `https://schema.org/${availability}`, url: abs(`/product/${p.slug}`) } } : {}),
+          offers: { '@type': 'Offer', price: p.price, priceCurrency: p.currency, availability: `https://schema.org/${p.stock === 'low' ? 'LimitedAvailability' : 'InStock'}`, url: abs(`/product/${p.slug}`) },
         },
         crumbs([['Каталог запчастин', '/catalog'], [cat.ua, `/catalog/${cat.slug}`], [sub.ua, `/catalog/${cat.slug}/${sub.slug}`]]),
       ],
-      priority: p.source === 'asiamotor' ? 0.6 : 0.4,
+      priority: 0.6,
     }
   }),
   { path: '/delivery', title: 'Доставка й оплата | Asia Motor', description: 'Доставка по Україні «Новою поштою» та Delivery, самовивіз у Запоріжжі, деталі під замовлення з Китаю.', h1: 'Доставка й оплата', priority: 0.5 },
   { path: '/contacts', title: 'Контакти | Asia Motor', description: `${company.address.ua}. ${company.phones.map((p) => p.display).join(', ')}. ${company.email}`, h1: 'Контакти', jsonLd: [org], priority: 0.5 },
   { path: '/cart', title: 'Кошик | Asia Motor', description: 'Кошик', h1: 'Кошик', noindex: true },
   { path: '/checkout', title: 'Оформлення замовлення | Asia Motor', description: 'Оформлення замовлення', h1: 'Оформлення замовлення', noindex: true },
-  { path: '/admin/pricing', title: 'Конкурентне ціноутворення — концепт | Asia Motor', description: 'Внутрішня панель (демо).', h1: 'Конкурентне ціноутворення', noindex: true },
 ]
 
 function render(pg: Page) {
@@ -174,7 +170,7 @@ for (const pg of pages) {
 // unknown URLs: the app shows its own 404 page
 writeFileSync(join(DIST, '404.html'), render({ path: '/404', title: 'Сторінку не знайдено | Asia Motor', description: 'Сторінку не знайдено', h1: 'Сторінку не знайдено', noindex: true }))
 
-const today = new Date().toISOString().slice(0, 10)
+const today = priceDate
 writeFileSync(
   join(DIST, 'sitemap.xml'),
   `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages
@@ -182,5 +178,5 @@ writeFileSync(
     .map((p) => `  <url><loc>${abs(p.path)}</loc><lastmod>${today}</lastmod><priority>${(p.priority ?? 0.5).toFixed(1)}</priority></url>`)
     .join('\n')}\n</urlset>\n`,
 )
-writeFileSync(join(DIST, 'robots.txt'), `User-agent: *\nDisallow: ${BASE}cart\nDisallow: ${BASE}checkout\nDisallow: ${BASE}admin/\n\nSitemap: ${abs('/sitemap.xml')}\n`)
+writeFileSync(join(DIST, 'robots.txt'), `User-agent: *\nDisallow: ${BASE}cart\nDisallow: ${BASE}checkout\nDisallow: ${BASE}api/\n\nSitemap: ${abs('/sitemap.xml')}\n`)
 console.log(`prerendered ${pages.length} pages, sitemap with ${pages.filter((p) => !p.noindex).length} URLs`)

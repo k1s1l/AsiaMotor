@@ -1,5 +1,7 @@
 import { Link } from 'react-router'
-import { ExternalLink, Mail, MapPin, Phone } from 'lucide-react'
+import { Mail, MapPin, MessageCircle, Phone, ScanLine } from 'lucide-react'
+import { useStore } from '../store'
+import { RequestForm } from '../components/forms/RequestForm'
 import { useI18n } from '../i18n'
 import { company } from '../data/company'
 import { Crumbs } from '../components/shop/bits'
@@ -13,7 +15,6 @@ const orgLd = {
   email: company.email,
   telephone: company.phones.map((p) => p.href.replace('tel:', '')),
   address: { '@type': 'PostalAddress', streetAddress: 'вул. Крива Бухта, 2', addressLocality: 'Запоріжжя', addressCountry: 'UA' },
-  url: company.site,
 }
 
 export function DeliveryPage() {
@@ -39,9 +40,6 @@ export function DeliveryPage() {
               <Phone size={16} /> {p.display}
             </a>
           ))}
-          <a href={company.pages.delivery} target="_blank" rel="noreferrer" className="btn btn-line">
-            {t.info.more} <ExternalLink size={15} />
-          </a>
         </div>
       </div>
     </div>
@@ -50,6 +48,7 @@ export function DeliveryPage() {
 
 export function ContactsPage() {
   const { t, lang } = useI18n()
+  const { ask } = useStore()
   useSeo({ title: `${t.info.contactsTitle} | Asia Motor`, description: `${t.info.contactsLead} ${company.address[lang]}, ${company.phones.map((p) => p.display).join(', ')}`, path: '/contacts', jsonLd: orgLd })
   return (
     <div className="bg-paper pb-24 pt-[96px] text-ink lg:pt-[136px]">
@@ -78,6 +77,21 @@ export function ContactsPage() {
             <p className="mt-2 pl-8 text-[14px] text-ink/55">{t.info.schedule}</p>
           </section>
         </div>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <button onClick={() => ask('callback')} className="btn btn-dark min-h-[56px]">
+            <MessageCircle size={17} /> {t.nav.callback}
+          </button>
+          <button onClick={() => ask('vin')} className="btn btn-line min-h-[56px]">
+            <ScanLine size={17} /> {t.forms.vinTitle}
+          </button>
+        </div>
+        <section id="feedback" className="mt-10 rounded-[22px] border border-ink/10 bg-white p-5 sm:p-8">
+          <h2 className="font-display text-[clamp(20px,2.2vw,28px)] font-semibold uppercase tracking-tight">{t.forms.feedbackTitle}</h2>
+          <p className="mt-2 max-w-[60ch] text-[15px] text-ink/60">{t.forms.feedbackLead}</p>
+          <div className="mt-6">
+            <RequestForm kind="feedback" />
+          </div>
+        </section>
         <Link to="/delivery" className="link-u mt-8 inline-block font-semibold">
           {t.info.deliveryTitle} →
         </Link>

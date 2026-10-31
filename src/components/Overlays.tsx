@@ -11,6 +11,8 @@ import { Logo } from './Logo'
 import { SearchBox } from './Header'
 import { CarPicker } from './shop/CarPicker'
 import { productPath } from './shop/ProductCard'
+import { ProductImage } from './shop/bits'
+import { RequestForm } from './forms/RequestForm'
 
 /** Stays mounted for CSS transitions, inert while closed, focuses itself on open. */
 function Panel({ open, children, className, label }: { open: boolean; children: ReactNode; className: string; label: string }) {
@@ -62,9 +64,10 @@ export function Overlays() {
       <CatalogPanel />
       <MobileMenu />
       <SearchPanel />
-      <Backdrop open={overlay === 'cart' || overlay === 'car'} onClick={close} />
+      <Backdrop open={overlay === 'cart' || overlay === 'car' || overlay === 'request'} onClick={close} />
       <CartDrawer />
       <CarDialog />
+      <RequestDialog />
       <Toast />
     </>
   )
@@ -197,7 +200,26 @@ function CarDialog() {
             />
           )}
         </div>
-        <p className="mt-4 text-[12.5px] text-ink/45">{t.car.demoNote}</p>
+        <p className="mt-4 text-[12.5px] text-ink/45">{t.car.note}</p>
+      </div>
+    </Panel>
+  )
+}
+
+function RequestDialog() {
+  const { t } = useI18n()
+  const { overlay, close, request } = useStore()
+  const open = overlay === 'request'
+  const p = request.product ? getProductById(request.product) : undefined
+  const title = { callback: t.forms.callbackTitle, vin: t.forms.vinTitle, feedback: t.forms.feedbackTitle, product: t.forms.productTitle }[request.kind]
+  const lead = { callback: t.forms.callbackLead, vin: t.forms.vinLead, feedback: t.forms.feedbackLead, product: p ? `${p.name.ua} · ${p.article || p.code}` : '' }[request.kind]
+  return (
+    <Panel open={open} label={title} className={`fixed left-1/2 top-1/2 z-[70] flex max-h-[calc(100dvh-24px)] w-[min(560px,calc(100vw-24px))] -translate-x-1/2 flex-col rounded-[24px] bg-paper text-ink shadow-2xl transition-all duration-500 ease-[var(--ease-out-expo)] ${open ? '-translate-y-1/2 opacity-100' : 'pointer-events-none -translate-y-[45%] opacity-0'}`}>
+      <Head title={title} onClose={close} />
+      <div className="overflow-y-auto p-5">
+        <p className="mb-4 text-[14px] text-ink/60">{lead}</p>
+        {/* remounted on every opening, so a sent form starts empty next time */}
+        {open && <RequestForm key={`${request.kind}-${request.product ?? ''}`} kind={request.kind} product={request.product} onDone={close} />}
       </div>
     </Panel>
   )
@@ -211,7 +233,7 @@ function CartDrawer() {
   const lines = Object.entries(cart)
     .map(([id, qty]) => ({ p: getProductById(id), qty }))
     .filter((l): l is { p: Product; qty: number } => !!l.p)
-  const uah = lines.filter((l) => l.p.currency === 'UAH').reduce((s, l) => s + l.p.price * l.qty, 0)
+  const uah = lines.reduce((s, l) => s + l.p.price * l.qty, 0)
   return (
     <Panel open={open} label={t.cart.title} className={drawer(open)}>
       <Head title={<>{t.cart.title} <span className="text-ink/40">({lines.length})</span></>} onClose={close} />
@@ -232,24 +254,24 @@ function CartDrawer() {
             {lines.map(({ p, qty }) => (
               <li key={p.id} className="flex gap-3 py-4">
                 <Link to={productPath(p)} className="shrink-0">
-                  <img src={p.images[0]} alt="" className="h-20 w-20 rounded-xl bg-[#e9e7e2] object-cover" />
+                  <ProductImage p={p} className="h-20 w-20 overflow-hidden rounded-xl" compact />
                 </Link>
                 <div className="min-w-0 flex-1">
                   <Link to={productPath(p)} className="line-clamp-2 text-[14px] font-semibold leading-snug hover:text-accent">
                     {p.name[lang]}
                   </Link>
-                  <p className="mt-0.5 font-mono text-[11.5px] text-ink/50">{p.article}</p>
+                  <p className="mt-0.5 font-mono text-[11.5px] text-ink/50">{p.article || p.code}</p>
                   <div className="mt-2 flex items-center justify-between">
                     <div className="flex items-center rounded-lg border border-ink/15">
                       <button className="grid h-8 w-8 place-items-center" onClick={() => setQty(p.id, qty - 1)} aria-label="−1">
                         <Minus size={13} />
                       </button>
                       <span className="w-6 text-center text-sm font-semibold tabular-nums">{qty}</span>
-                      <button className="grid h-8 w-8 place-items-center" onClick={() => setQty(p.id, qty + 1)} aria-label="+1">
+                      <button className="grid h-8 w-8 place-items-center disabled:opacity-30" disabled={qty >= p.qty} title={t.cart.maxQty(p.qty)} onClick={() => setQty(p.id, qty + 1)} aria-label="+1">
                         <Plus size={13} />
                       </button>
                     </div>
-                    <span className="font-semibold tabular-nums">{formatPrice(p.price * qty, p.currency)}</span>
+                    <span className="font-semibold tabular-nums">{formatPrice(p.price * qty)}</span>
                   </div>
                 </div>
                 <button className="self-start text-ink/35 hover:text-accent" onClick={() => setQty(p.id, 0)} aria-label={t.cart.remove}>

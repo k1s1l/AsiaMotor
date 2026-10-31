@@ -16,7 +16,7 @@ function Field({ id, label, value, onChange, options, disabled, dark }: { id: st
         onChange={(e) => onChange(e.target.value)}
         className={`field cursor-pointer appearance-none px-3.5 pb-2 pr-9 text-[15px] font-semibold disabled:cursor-not-allowed ${dark ? '[&>option]:text-ink' : ''}`}
       >
-        <option value="">{label === t.car.year || label === t.car.engine ? t.car.any : t.car.choose}</option>
+        <option value="">{t.car.choose}</option>
         {options.map(([v, l]) => (
           <option key={v} value={v}>
             {l}
@@ -29,7 +29,7 @@ function Field({ id, label, value, onChange, options, disabled, dark }: { id: st
 }
 
 /**
- * Make → model → year → engine. `instant` writes every change straight into "My car"
+ * Make → model (exactly the groups of the price list). `instant` writes every change straight into "My car"
  * (catalogue sidebar); otherwise the choice is saved on submit (home page, product page).
  */
 export function CarPicker({ layout = 'row', instant, dark, onSubmit, idPrefix = 'car', initial }: { layout?: 'row' | 'stack'; instant?: boolean; dark?: boolean; onSubmit?: (c: Car) => void; idPrefix?: string; initial?: Partial<Car> }) {
@@ -42,7 +42,6 @@ export function CarPicker({ layout = 'row', instant, dark, onSubmit, idPrefix = 
 
   const mk = findMake(draft.make)
   const md = findModel(mk, draft.model)
-  const years = md ? Array.from({ length: md.years[1] - md.years[0] + 1 }, (_, i) => md.years[1] - i) : []
 
   const update = (patch: Partial<Car>) => {
     const next = { ...draft, ...patch }
@@ -52,10 +51,8 @@ export function CarPicker({ layout = 'row', instant, dark, onSubmit, idPrefix = 
 
   const fields = (
     <>
-      <Field dark={dark} id={`${idPrefix}-make`} label={t.car.make} value={draft.make ?? ''} options={makes.map((m) => [m.slug, m.name])} onChange={(v) => update({ make: v, model: undefined, year: undefined, engine: undefined })} />
-      <Field dark={dark} id={`${idPrefix}-model`} label={t.car.model} value={draft.model ?? ''} disabled={!mk} options={(mk?.models ?? []).map((m) => [m.slug, m.name])} onChange={(v) => update({ model: v || undefined, year: undefined, engine: undefined })} />
-      <Field dark={dark} id={`${idPrefix}-year`} label={t.car.year} value={draft.year ? String(draft.year) : ''} disabled={!md} options={years.map((y) => [String(y), String(y)])} onChange={(v) => update({ year: v ? Number(v) : undefined })} />
-      <Field dark={dark} id={`${idPrefix}-engine`} label={t.car.engine} value={draft.engine ?? ''} disabled={!md} options={(md?.engines ?? []).map((e) => [e, e])} onChange={(v) => update({ engine: v || undefined })} />
+      <Field dark={dark} id={`${idPrefix}-make`} label={t.car.make} value={draft.make ?? ''} options={makes.map((m) => [m.slug, m.name])} onChange={(v) => update({ make: v, model: undefined })} />
+      <Field dark={dark} id={`${idPrefix}-model`} label={t.car.model} value={draft.model ?? ''} disabled={!mk} options={(mk?.models ?? []).map((m) => [m.slug, m.name])} onChange={(v) => update({ model: v || undefined })} />
     </>
   )
 
@@ -73,7 +70,7 @@ export function CarPicker({ layout = 'row', instant, dark, onSubmit, idPrefix = 
 
   return (
     <form
-      className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[repeat(4,minmax(0,1fr))_auto]"
+      className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[repeat(2,minmax(0,1fr))_auto]"
       onSubmit={(e) => {
         e.preventDefault()
         if (!draft.make || !draft.model) return

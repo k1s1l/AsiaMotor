@@ -8,6 +8,7 @@ import { company } from '../data/company'
 import { query, formatPrice } from '../data/catalog'
 import { carLabel } from '../data/vehicles'
 import { productPath } from './shop/ProductCard'
+import { ProductImage } from './shop/bits'
 
 /** Header search with instant suggestions; Enter opens the catalogue with the query. */
 export function SearchBox({ dark, autoFocus, onDone }: { dark?: boolean; autoFocus?: boolean; onDone?: () => void }) {
@@ -66,12 +67,12 @@ export function SearchBox({ dark, autoFocus, onDone }: { dark?: boolean; autoFoc
               {results.slice(0, 6).map((p) => (
                 <li key={p.id}>
                   <button type="button" onClick={() => go(productPath(p))} className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-ink/[0.04]">
-                    <img src={p.images[0]} alt="" className="h-12 w-12 shrink-0 rounded-lg bg-[#e9e7e2] object-cover" />
+                    <ProductImage p={p} className="h-12 w-12 shrink-0 overflow-hidden rounded-lg !p-0" compact />
                     <span className="min-w-0 flex-1">
                       <span className="line-clamp-1 text-[14px] font-semibold">{p.name[lang]}</span>
-                      <span className="font-mono text-[12px] text-ink/50">{p.article}</span>
+                      <span className="font-mono text-[12px] text-ink/50">{p.article || p.code}</span>
                     </span>
-                    <span className="shrink-0 text-[14px] font-semibold tabular-nums">{formatPrice(p.price, p.currency)}</span>
+                    <span className="shrink-0 text-[14px] font-semibold tabular-nums">{formatPrice(p.price)}</span>
                   </button>
                 </li>
               ))}
@@ -91,7 +92,7 @@ export function SearchBox({ dark, autoFocus, onDone }: { dark?: boolean; autoFoc
 
 export function Header() {
   const { t, lang, setLang } = useI18n()
-  const { cartCount, open, overlay, car, setCar } = useStore()
+  const { cartCount, open, overlay, car, setCar, ask } = useStore()
   const { pathname } = useLocation()
   const [scrolled, setScrolled] = useState(false)
   const [bump, setBump] = useState(false)
@@ -120,9 +121,12 @@ export function Header() {
       <div className="hidden border-b border-white/8 lg:block">
         <div className="container-x flex h-9 items-center justify-between text-[13px] text-white/60">
           <span>
-            {t.footer.tagline} <span className="ml-2 rounded bg-white/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-white/70">{t.common.demo}</span>
+            {t.footer.tagline}
           </span>
           <nav className="flex items-center gap-5" aria-label="Info">
+            <button onClick={() => ask('callback')} className="hover:text-white">
+              {t.nav.callback}
+            </button>
             <Link to="/delivery" className="hover:text-white">
               {t.nav.delivery}
             </Link>

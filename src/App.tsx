@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from 'react'
+import { useEffect } from 'react'
 import { Route, Routes, useLocation } from 'react-router'
 import { Header } from './components/Header'
 import { Footer } from './components/Footer'
@@ -12,9 +12,6 @@ import { ContactsPage, DeliveryPage } from './pages/Info'
 import { NotFound } from './pages/NotFound'
 import { ScrollTrigger, scrollToTop, startSmoothScroll } from './lib/motion'
 import { useI18n } from './i18n'
-
-// the pricing console is an internal tool: its code is not part of the shop bundle
-const PricingAdmin = lazy(() => import('./admin/PricingAdmin'))
 
 export default function App() {
   const { t, lang } = useI18n()
@@ -52,14 +49,6 @@ export default function App() {
           <Route path="/checkout" element={<CheckoutPage />} />
           <Route path="/delivery" element={<DeliveryPage />} />
           <Route path="/contacts" element={<ContactsPage />} />
-          <Route
-            path="/admin/pricing"
-            element={
-              <Suspense fallback={<div className="min-h-screen bg-paper" />}>
-                <PricingAdmin />
-              </Suspense>
-            }
-          />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </main>

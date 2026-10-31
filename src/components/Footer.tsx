@@ -1,9 +1,18 @@
 import { Link } from 'react-router'
-import { ArrowUp, ExternalLink, Mail, MapPin, Phone } from 'lucide-react'
+import { ArrowUp, Mail, MapPin, Phone } from 'lucide-react'
 import { useI18n } from '../i18n'
 import { company } from '../data/company'
 import { taxonomy } from '../data/taxonomy'
 import { makes } from '../data/vehicles'
+import { products } from '../data/catalog'
+
+// the makes with the most parts get their own line, the rest share one
+const byParts = [...makes].sort((a, b) => count(b.slug) - count(a.slug))
+function count(make: string) {
+  return products.filter((p) => p.compat.some((c) => c.make === make)).length
+}
+const topMakes = byParts.slice(0, 8)
+const otherMakes = byParts.slice(8).sort((a, b) => a.name.localeCompare(b.name))
 import { scrollToTarget } from '../lib/motion'
 import { Logo } from './Logo'
 
@@ -46,10 +55,19 @@ export function Footer() {
           <nav className="lg:col-span-2" aria-label={t.home.brandsTitle}>
             <p className="text-[13px] font-semibold uppercase tracking-wider text-white/45">{t.home.brandsTitle}</p>
             <ul className="mt-4 space-y-2.5 text-[15px] text-white/75">
-              {makes.map((m) => (
+              {topMakes.map((m) => (
                 <li key={m.slug}>
                   <Link to={`/cars/${m.slug}`} className="hover:text-white">
                     {lang === 'ua' ? 'Запчастини' : 'Запчасти'} {m.name}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            <ul className="mt-3 flex flex-wrap gap-x-2.5 gap-y-1 text-[13px] text-white/45">
+              {otherMakes.map((m) => (
+                <li key={m.slug}>
+                  <Link to={`/cars/${m.slug}`} className="hover:text-white">
+                    {m.name}
                   </Link>
                 </li>
               ))}
@@ -78,22 +96,12 @@ export function Footer() {
                   {t.nav.cart}
                 </Link>
               </li>
-              <li>
-                <a href={company.site} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 hover:text-white">
-                  asiamotor.com.ua <ExternalLink size={13} />
-                </a>
-              </li>
-              <li>
-                <Link to="/admin/pricing" className="text-white/40 hover:text-white" rel="nofollow">
-                  {t.footer.pricing}
-                </Link>
-              </li>
             </ul>
           </nav>
         </div>
         <div className="flex flex-col gap-4 py-8 text-[12.5px] leading-relaxed text-white/45 sm:flex-row sm:items-start sm:justify-between">
           <p className="max-w-3xl">
-            © {new Date().getFullYear()} Asia Motor · {t.footer.demo}
+            © {new Date().getFullYear()} Asia Motor · {t.footer.tagline}
             <br />
             {t.footer.model}{' '}
             <a className="link-u" href="https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/CarConcept" target="_blank" rel="noreferrer">

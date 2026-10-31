@@ -6,7 +6,7 @@ import type { Product } from '../../data/catalog'
 import { ProductCard } from './ProductCard'
 
 /** Horizontal, swipeable row of product cards with an optional "view all" link. */
-export function ProductRail({ title, lead, items, to, dark }: { title: string; lead?: string; items: Product[]; to?: string; dark?: boolean }) {
+export function ProductRail({ title, lead, items, to, dark, onOpen }: { title: string; lead?: string; items: Product[]; to?: string; dark?: boolean; onOpen?: () => void }) {
   const { t } = useI18n()
   const row = useRef<HTMLUListElement>(null)
   if (!items.length) return null
@@ -20,7 +20,7 @@ export function ProductRail({ title, lead, items, to, dark }: { title: string; l
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {to && (
-            <Link to={to} className="link-u mr-2 hidden items-center gap-1.5 text-[14px] font-semibold sm:flex">
+            <Link to={to} onClick={onOpen} className="link-u mr-2 hidden items-center gap-1.5 text-[14px] font-semibold sm:flex">
               {t.common.viewAll} <ArrowRight size={15} />
             </Link>
           )}
