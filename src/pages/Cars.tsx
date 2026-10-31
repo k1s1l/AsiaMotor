@@ -40,7 +40,6 @@ export function CarsPage() {
         <Crumbs items={[{ to: '/', label: t.common.home }, { to: md ? `/cars/${mk.slug}` : undefined, label: mk.name }, ...(md ? [{ label: md.name }] : [])]} />
         <h1 className="mt-5 font-display text-[clamp(28px,4.4vw,56px)] font-semibold uppercase leading-[1] tracking-[-0.03em]">{t.cars.title(name)}</h1>
         <p className="mt-4 max-w-[62ch] text-[16px] leading-relaxed text-ink/65">{t.cars.lead(name, list.length)}</p>
-        {md && <p className="mt-1 text-[14px] text-ink/50">{`${md.years[0]}–${md.years[1]} · ${md.engines.join(', ')}`}</p>}
 
         {!md && (
           <section className="mt-8">
@@ -50,9 +49,6 @@ export function CarsPage() {
                 <li key={m.slug}>
                   <Link to={`/cars/${mk.slug}/${m.slug}`} className="block rounded-xl border border-ink/12 bg-white px-4 py-2.5 text-[15px] font-semibold hover:border-ink/50">
                     {mk.name} {m.name}
-                    <span className="ml-2 text-[12px] font-normal text-ink/45">
-                      {m.years[0]}–{m.years[1]}
-                    </span>
                   </Link>
                 </li>
               ))}
@@ -88,7 +84,7 @@ export function CarsPage() {
         </section>
 
         <div className="mt-16">
-          <ProductRail title={t.home.popular} items={list.slice(0, 12)} />
+          <ProductRail title={t.cars.title(name)} items={list.slice(0, 12)} to={md ? '/catalog' : `/catalog?make=${mk.slug}`} onOpen={md && car ? () => setCar(car) : undefined} />
         </div>
 
         <section className="mt-16">

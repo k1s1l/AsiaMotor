@@ -1,4 +1,4 @@
-/** Text-based wordmark for the demo. Replace with the official Asia Motor logo files. */
+/** Text wordmark of the site. Replace with the official Asia Motor logo files when the owner provides them. */
 export function Logo({ className = '' }: { className?: string }) {
   return (
     <span className={`inline-flex items-center gap-2.5 ${className}`}>

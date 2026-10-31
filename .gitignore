@@ -3,3 +3,12 @@ dist
 *.local
 tools/.frames
 tools/render.log
+.env
+.env.*
+!.env.example
+.dev.vars
+# the price list from 1C: contains wholesale prices and payment details — never commit it
+catalog/*.xls
+catalog/*.xlsx
+*.xls
+*.xlsx

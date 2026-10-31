@@ -14,7 +14,8 @@
     "prerender": "tsx scripts/prerender.ts",
     "deploy:docs": "npm run build:pages && rm -rf docs && cp -r dist docs && touch docs/.nojekyll",
     "model:inspect": "tsx scripts/inspect-model.ts",
-    "model:optimize": "bash scripts/optimize-model.sh"
+    "model:optimize": "bash scripts/optimize-model.sh",
+    "catalog:import": "tsx scripts/import-catalog.ts"
   },
   "dependencies": {
     "@fontsource-variable/manrope": "^5.3.0",
@@ -39,6 +40,7 @@
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.15",
     "typescript": "~7.0.2",
-    "vite": "^8.3.5"
+    "vite": "^8.3.5",
+    "xlsx": "^0.18.5"
   }
 }
