@@ -126,7 +126,7 @@ const pages: Page[] = [
           name: p.name.ua,
           sku: p.code,
           ...(p.article ? { mpn: p.article } : {}),
-          ...(p.images.length ? { image: p.images.map((src) => (/^https:/.test(src) ? src : ORIGIN + src)) } : {}),
+          ...(p.images.length ? { image: p.images.map((src) => (/^https:/.test(src) ? src : abs(src))) } : {}),
           category: `${cat.ua} / ${sub.ua}`,
           offers: { '@type': 'Offer', price: p.price, priceCurrency: p.currency, availability: `https://schema.org/${p.stock === 'low' ? 'LimitedAvailability' : 'InStock'}`, url: abs(`/product/${p.slug}`) },
         },
