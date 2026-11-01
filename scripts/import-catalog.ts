@@ -63,12 +63,13 @@ const priceDate = dateCell ? dateCell.split('.').reverse().join('-') : new Date(
 const photoDir = 'public/products'
 const photos = new Map<string, string[]>()
 if (existsSync(photoDir))
-  for (const f of readdirSync(photoDir).sort()) {
-    const m = f.match(/^(.+?)(?:-(\d+))?\.(jpe?g|png|webp|avif)$/i)
-    if (!m) continue
-    const k = photoKey(m[1])
+  for (const { f, k } of readdirSync(photoDir)
+    // "<article|code>.webp" is the main photo, "<article|code>-2.webp" … "-99" the extra ones
+    .map((f) => ({ f, m: f.match(/^(.+?)(?:-(\d{1,2}))?\.(jpe?g|png|webp|avif)$/i) }))
+    .filter((x) => x.m)
+    .map(({ f, m }) => ({ f, k: photoKey(m![1]), n: Number(m![2] ?? 1) }))
+    .sort((a, b) => a.k.localeCompare(b.k) || a.n - b.n))
     photos.set(k, [...(photos.get(k) ?? []), `products/${f}`])
-  }
 
 // ------------------------------------------------------------------ walk the groups
 interface Out {
@@ -127,7 +128,8 @@ for (let r = headerRow + 1; r < rows.length; r++) {
     if (hit && !hit[1]) continue
     const article = str(row[cArticle])
     const own = [...(photos.get(photoKey(article)) ?? []), ...(photos.get(photoKey(code)) ?? [])]
-    const links = cPhoto >= 0 ? str(row[cPhoto]).split(/[\s;,]+/).filter((u) => /^https:\/\//.test(u)) : []
+    // links to our own /products/ files (as in the exported Excel) are already covered by the files on disk
+    const links = cPhoto >= 0 ? str(row[cPhoto]).split(/[\s;,]+/).filter((u) => /^https:\/\//.test(u) && !own.some((o) => u.endsWith('/' + o))) : []
     p = { id: code, slug: '', name, article, code, cat, sub, price, qty, cars: [], images: [...new Set([...own, ...links])] }
     products.set(code, p)
   } else if (p.price !== price || p.name !== name) {
